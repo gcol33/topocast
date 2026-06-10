@@ -15,6 +15,7 @@ topocast(
   baseline = NULL,
   type = c("ratio", "additive"),
   method = "cubicspline",
+  output = NULL,
   min_cells = 0L,
   min_variance = 1e-08
 )
@@ -24,12 +25,16 @@ topocast(
 \code{prec ~ elev + slope}. The left-hand side names the coarse response layer in
 \code{data}; the right-hand side names the predictor layers.}
 
-\item{data}{A \code{SpatRaster} on the coarse grid holding the response layer and,
-optionally, predictor layers named in \code{formula}. Any predictor not in \code{data}
-is derived from \code{onto}.}
+\item{data}{A gridded coarse input holding the response layer and, optionally,
+predictor layers named in \code{formula}: a \code{SpatRaster}, a \verb{Raster*} (raster), or
+a \code{stars} object. Any predictor not in \code{data} is derived from \code{onto}.}
 
-\item{onto}{A \code{SpatRaster} on the target grid holding every predictor layer
-named in \code{formula}. Its grid defines the output.}
+\item{onto}{The target. A gridded \code{SpatRaster}, \verb{Raster*}, or \code{stars} object
+whose grid defines the output, holding every predictor layer named in
+\code{formula}; or an \code{sf}/\code{SpatVector} of points carrying those predictors as
+attributes, in which case the fit is evaluated at the points. With a point
+\code{onto} every predictor must be a layer of \code{data} (the derive-from-\code{onto}
+shortcut needs a grid).}
 
 \item{radius}{Integer window radius in coarse cells; the window is a square of
 side \code{2 * radius + 1}.}
@@ -44,7 +49,7 @@ with \code{anomaly}. Default \code{FALSE}.}
 
 \item{anomaly}{Optional multi-layer \code{SpatRaster} on the coarse grid; each layer
 is one period to downscale relative to \code{baseline}. When supplied, the result
-has one layer per period.}
+has one layer (or column) per period.}
 
 \item{baseline}{Optional single-layer \code{SpatRaster}, the coarse response baseline
 that \code{anomaly} is taken relative to. Defaults to the response layer of \code{data}.
@@ -56,12 +61,18 @@ Ignored when \code{anomaly} is \code{NULL}.}
 \item{method}{Resampling method for the coefficient grids, passed to
 \code{\link[terra:resample]{terra::resample()}}. Default \code{"cubicspline"}.}
 
+\item{output}{Optional output class, one of \code{"terra"}, \code{"raster"}, \code{"stars"}
+(grid targets) or \code{"terra"}, \code{"sf"}, \code{"spatvector"}, \code{"data.frame"} (point
+targets). Default \code{NULL} returns the result in the class of \code{onto}.}
+
 \item{min_cells, min_variance}{Passed to \code{\link[=window_regression]{window_regression()}}.}
 }
 \value{
-A \code{SpatRaster} on the grid of \code{onto}. By default a single layer named
-for the response; one layer per period when \code{anomaly} is supplied; or the
-fitted layer plus \code{(Intercept)} and slope grids when \code{coefficients = TRUE}.
+The downscaled result on the geometry of \code{onto}, in the class of \code{onto}
+or the class named by \code{output}. For a grid target: a single layer named for
+the response; one layer per period when \code{anomaly} is supplied; or the fitted
+layer plus \code{(Intercept)} and slope grids when \code{coefficients = TRUE}. For a
+point target the same quantities are returned as prediction columns.
 }
 \description{
 Fits a local linear regression of a coarse response on one or more coarse
@@ -91,11 +102,20 @@ relationship is fit once and each period's coarse anomaly, relative to
 \code{baseline}, is carried onto the fine baseline. Use \code{type = "ratio"} for
 non-negative variables such as precipitation and \code{type = "additive"} for
 variables such as temperature.
+
+\code{data} and \code{onto} may be any of the common spatial classes. A gridded input is
+accepted as a \code{SpatRaster}, a \verb{Raster*} object (raster), or a \code{stars} object.
+The target \code{onto} may instead be a set of points as an \code{sf} or \code{SpatVector}
+object, in which case the fitted relationship is evaluated at each point and a
+prediction column is returned; the points must carry the fine predictor values
+as attributes. By default the result is returned in the class of \code{onto}; set
+\code{output} to request another.
 }
 \examples{
 library(terra)
 set.seed(1)
-coarse <- rast(nrows = 20, ncols = 20, xmin = 0, xmax = 20, ymin = 0, ymax = 20)
+coarse <- rast(nrows = 20, ncols = 20, xmin = 0, xmax = 20, ymin = 0, ymax = 20,
+               crs = "EPSG:32632")
 elevation <- setValues(coarse, runif(ncell(coarse), 0, 2000))
 precipitation <- 800 - 0.1 * elevation
 data <- c(precipitation, elevation)
@@ -118,6 +138,14 @@ months <- precipitation * c(0.8, 1.2)
 names(months) <- c("jan", "feb")
 series <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
                    anomaly = months, type = "ratio")
+
+# predict at point locations: onto is sf points carrying the predictor
+if (requireNamespace("sf", quietly = TRUE)) {
+  plots <- sf::st_as_sf(
+    data.frame(x = c(5, 10, 15), y = c(5, 10, 15), elev = c(500, 1000, 1500)),
+    coords = c("x", "y"), crs = "EPSG:32632")
+  at_plots <- topocast(prec ~ elev, data = data, onto = plots, radius = 4)
+}
 
 }
 \seealso{

@@ -28,14 +28,26 @@
 #' non-negative variables such as precipitation and `type = "additive"` for
 #' variables such as temperature.
 #'
+#' `data` and `onto` may be any of the common spatial classes. A gridded input is
+#' accepted as a `SpatRaster`, a `Raster*` object (raster), or a `stars` object.
+#' The target `onto` may instead be a set of points as an `sf` or `SpatVector`
+#' object, in which case the fitted relationship is evaluated at each point and a
+#' prediction column is returned; the points must carry the fine predictor values
+#' as attributes. By default the result is returned in the class of `onto`; set
+#' `output` to request another.
+#'
 #' @param formula A two-sided formula of bare layer names, such as
 #'   `prec ~ elev + slope`. The left-hand side names the coarse response layer in
 #'   `data`; the right-hand side names the predictor layers.
-#' @param data A `SpatRaster` on the coarse grid holding the response layer and,
-#'   optionally, predictor layers named in `formula`. Any predictor not in `data`
-#'   is derived from `onto`.
-#' @param onto A `SpatRaster` on the target grid holding every predictor layer
-#'   named in `formula`. Its grid defines the output.
+#' @param data A gridded coarse input holding the response layer and, optionally,
+#'   predictor layers named in `formula`: a `SpatRaster`, a `Raster*` (raster), or
+#'   a `stars` object. Any predictor not in `data` is derived from `onto`.
+#' @param onto The target. A gridded `SpatRaster`, `Raster*`, or `stars` object
+#'   whose grid defines the output, holding every predictor layer named in
+#'   `formula`; or an `sf`/`SpatVector` of points carrying those predictors as
+#'   attributes, in which case the fit is evaluated at the points. With a point
+#'   `onto` every predictor must be a layer of `data` (the derive-from-`onto`
+#'   shortcut needs a grid).
 #' @param radius Integer window radius in coarse cells; the window is a square of
 #'   side `2 * radius + 1`.
 #' @param aggregate Resampling method used to derive a coarse predictor from
@@ -46,7 +58,7 @@
 #'   with `anomaly`. Default `FALSE`.
 #' @param anomaly Optional multi-layer `SpatRaster` on the coarse grid; each layer
 #'   is one period to downscale relative to `baseline`. When supplied, the result
-#'   has one layer per period.
+#'   has one layer (or column) per period.
 #' @param baseline Optional single-layer `SpatRaster`, the coarse response baseline
 #'   that `anomaly` is taken relative to. Defaults to the response layer of `data`.
 #'   Ignored when `anomaly` is `NULL`.
@@ -54,18 +66,24 @@
 #'   `anomaly`.
 #' @param method Resampling method for the coefficient grids, passed to
 #'   [terra::resample()]. Default `"cubicspline"`.
+#' @param output Optional output class, one of `"terra"`, `"raster"`, `"stars"`
+#'   (grid targets) or `"terra"`, `"sf"`, `"spatvector"`, `"data.frame"` (point
+#'   targets). Default `NULL` returns the result in the class of `onto`.
 #' @param min_cells,min_variance Passed to [window_regression()].
 #'
-#' @return A `SpatRaster` on the grid of `onto`. By default a single layer named
-#'   for the response; one layer per period when `anomaly` is supplied; or the
-#'   fitted layer plus `(Intercept)` and slope grids when `coefficients = TRUE`.
+#' @return The downscaled result on the geometry of `onto`, in the class of `onto`
+#'   or the class named by `output`. For a grid target: a single layer named for
+#'   the response; one layer per period when `anomaly` is supplied; or the fitted
+#'   layer plus `(Intercept)` and slope grids when `coefficients = TRUE`. For a
+#'   point target the same quantities are returned as prediction columns.
 #'
 #' @seealso [window_regression()] for the matrix engine.
 #'
 #' @examples
 #' library(terra)
 #' set.seed(1)
-#' coarse <- rast(nrows = 20, ncols = 20, xmin = 0, xmax = 20, ymin = 0, ymax = 20)
+#' coarse <- rast(nrows = 20, ncols = 20, xmin = 0, xmax = 20, ymin = 0, ymax = 20,
+#'                crs = "EPSG:32632")
 #' elevation <- setValues(coarse, runif(ncell(coarse), 0, 2000))
 #' precipitation <- 800 - 0.1 * elevation
 #' data <- c(precipitation, elevation)
@@ -89,34 +107,47 @@
 #' series <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
 #'                    anomaly = months, type = "ratio")
 #'
+#' # predict at point locations: onto is sf points carrying the predictor
+#' if (requireNamespace("sf", quietly = TRUE)) {
+#'   plots <- sf::st_as_sf(
+#'     data.frame(x = c(5, 10, 15), y = c(5, 10, 15), elev = c(500, 1000, 1500)),
+#'     coords = c("x", "y"), crs = "EPSG:32632")
+#'   at_plots <- topocast(prec ~ elev, data = data, onto = plots, radius = 4)
+#' }
+#'
 #' @export
 topocast <- function(formula, data, onto, radius,
                      aggregate = "average", coefficients = FALSE,
                      anomaly = NULL, baseline = NULL, type = c("ratio", "additive"),
-                     method = "cubicspline", min_cells = 0L, min_variance = 1e-8) {
+                     method = "cubicspline", output = NULL,
+                     min_cells = 0L, min_variance = 1e-8) {
   type <- match.arg(type)
   if (coefficients && !is.null(anomaly))
     stop("`coefficients = TRUE` is not supported with `anomaly`; the coefficients ",
          "describe the baseline fit. Request them in a call without `anomaly`.")
 
   parsed <- parse_topo_formula(formula)
-  if (!inherits(data, "SpatRaster")) stop("`data` must be a SpatRaster")
-  if (!inherits(onto, "SpatRaster")) stop("`onto` must be a SpatRaster")
-  onto <- harmonize_crs(data, onto)
+  data   <- as_grid(data, "data")
+  target <- as_target(onto)
+  target <- harmonize_target_crs(data, target)
 
-  fit <- fit_windows(parsed, data, onto, radius = radius, aggregate = aggregate,
+  onto_grid <- if (target$kind == "grid") target$grid else NULL
+  fit <- fit_windows(parsed, data, onto_grid, radius = radius, aggregate = aggregate,
                      min_cells = min_cells, min_variance = min_variance)
-  casted <- cast_onto(fit, onto, method = method)
+  casted <- cast_onto(fit, target, method = method)
 
   if (is.null(anomaly)) {
-    if (coefficients) return(c(casted$fitted, casted$coefficients))
-    return(casted$fitted)
+    cols <- stats::setNames(list(casted$fitted), parsed$response)
+    if (coefficients) cols <- c(cols, casted$coef_cols)
+    return(finalize(target, cols, output))
   }
 
   if (!inherits(anomaly, "SpatRaster"))
     stop("`anomaly` must be a SpatRaster")
   if (is.null(baseline)) baseline <- data[[parsed$response]]
-  carry_anomalies(casted$fitted, anomaly, baseline, type = type, method = method)
+  cols <- carry_anomalies(casted$fitted, anomaly, baseline, target,
+                          type = type, method = method)
+  finalize(target, cols, output)
 }
 
 # --- internal: fit / cast / carry seam ------------------------------------
@@ -161,7 +192,8 @@ parse_topo_formula <- function(formula) {
 
 # Treat two coordinate reference systems that share an EPSG code as equal even
 # when their WKT strings differ, as happens with cross-source lon/lat data; fail
-# with a message that names both systems otherwise.
+# with a message that names both systems otherwise. Works on SpatRaster and
+# SpatVector targets alike.
 harmonize_crs <- function(data, onto) {
   if (terra::same.crs(data, onto)) return(onto)
 
@@ -202,21 +234,29 @@ select_layers <- function(raster, wanted, argument) {
 }
 
 # Assemble the coarse predictors in formula order. A predictor that is a layer of
-# `data` is used directly; one that is only in `onto` is aggregated to the
-# response grid; one in neither is an error.
-resolve_predictors <- function(predictors, data, onto, response_template, aggregate) {
+# `data` is used directly; one that is only in the `onto` grid is aggregated to the
+# response grid. With a point target there is no `onto` grid, so a predictor must
+# be a layer of `data`; anything missing is an error.
+resolve_predictors <- function(predictors, data, onto_grid, response_template, aggregate) {
   layers <- vector("list", length(predictors))
   for (i in seq_along(predictors)) {
     name <- predictors[i]
     if (name %in% names(data)) {
       layers[[i]] <- data[[name]]
-    } else if (name %in% names(onto)) {
-      layers[[i]] <- terra::resample(onto[[name]], response_template, method = aggregate)
+    } else if (!is.null(onto_grid) && name %in% names(onto_grid)) {
+      layers[[i]] <- terra::resample(onto_grid[[name]], response_template, method = aggregate)
+    } else if (is.null(onto_grid)) {
+      stop(sprintf(paste0(
+        "predictor `%s` named in `formula` is not a layer of `data`.\n",
+        "  data layers: %s\n",
+        "With an sf/SpatVector `onto`, every predictor must be a layer of `data`; ",
+        "the derive-from-onto shortcut needs a gridded `onto`."),
+        name, paste(names(data), collapse = ", ")))
     } else {
       stop(sprintf(paste0(
         "predictor `%s` named in `formula` is in neither `data` nor `onto`.\n",
         "  data layers: %s\n  onto layers: %s"),
-        name, paste(names(data), collapse = ", "), paste(names(onto), collapse = ", ")))
+        name, paste(names(data), collapse = ", "), paste(names(onto_grid), collapse = ", ")))
     }
     names(layers[[i]]) <- name
   }
@@ -225,9 +265,9 @@ resolve_predictors <- function(predictors, data, onto, response_template, aggreg
 
 # Fit the coarse coefficient grids. Returns the coefficients as a multi-layer
 # SpatRaster (intercept plus one slope per predictor) on the coarse grid.
-fit_windows <- function(parsed, data, onto, radius, aggregate, min_cells, min_variance) {
+fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, min_variance) {
   response_raster <- select_layers(data, parsed$response, "data")
-  predictor_raster <- resolve_predictors(parsed$predictors, data, onto,
+  predictor_raster <- resolve_predictors(parsed$predictors, data, onto_grid,
                                          response_raster, aggregate)
 
   response_matrix <- raster_to_matrix(response_raster)
@@ -246,41 +286,45 @@ fit_windows <- function(parsed, data, onto, radius, aggregate, min_cells, min_va
        predictors = parsed$predictors)
 }
 
-# Resample the coefficient grids to the target grid and evaluate them on the
-# fine predictors: fitted = intercept + sum_j slope_j * predictor_j. Returns both
-# the fitted layer and the resampled fine-grid coefficients.
-cast_onto <- function(fit, onto, method) {
-  fine_predictors <- select_layers(onto, fit$predictors, "onto")
-  fine_coefficients <- terra::resample(fit$coefficients, fine_predictors[[1]], method = method)
+# Evaluate the fitted relationship on the target. The coarse coefficient grids are
+# brought onto the target (resampled to the fine grid, or interpolated at point
+# geometries) and combined with the target predictors as
+# fitted = intercept + sum_j slope_j * predictor_j. Returns the fitted values and
+# the per-coefficient grids/columns in the target's representation.
+cast_onto <- function(fit, target, method) {
+  coef  <- bring_onto_target(fit$coefficients, target, method)
+  preds <- target_predictors(target, fit$predictors)
 
-  fitted <- fine_coefficients[["(Intercept)"]]
-  for (predictor in fit$predictors)
-    fitted <- fitted + fine_coefficients[[predictor]] * fine_predictors[[predictor]]
-  names(fitted) <- fit$response
-  list(fitted = fitted, coefficients = fine_coefficients)
+  intercept <- coef[["(Intercept)"]]
+  slopes <- stats::setNames(lapply(fit$predictors, function(p) coef[[p]]), fit$predictors)
+  predictor_values <- stats::setNames(lapply(fit$predictors, function(p) preds[[p]]),
+                                       fit$predictors)
+  fitted <- eval_fitted(intercept, slopes, predictor_values)
+
+  coef_cols <- stats::setNames(
+    c(list(coef[["(Intercept)"]]), lapply(fit$predictors, function(p) coef[[p]])),
+    c("(Intercept)", fit$predictors))
+  list(fitted = fitted, coef_cols = coef_cols)
 }
 
 # Carry each coarse period's anomaly, relative to a coarse baseline, onto the fine
-# baseline. Ratio for non-negative variables, additive otherwise.
-carry_anomalies <- function(fine_baseline, anomaly, baseline, type, method) {
-  coarse_baseline <- terra::resample(baseline, fine_baseline, method = method)
+# baseline. Ratio for non-negative variables, additive otherwise. The baseline and
+# periods are brought onto the target the same way as the fit. Returns a named list
+# of per-period grids/columns.
+carry_anomalies <- function(fine_baseline, anomaly, baseline, target, type, method) {
+  coarse_baseline <- as_value(bring_onto_target(baseline, target, method))
 
   n_periods <- terra::nlyr(anomaly)
   periods <- vector("list", n_periods)
   for (period in seq_len(n_periods)) {
-    coarse_value <- terra::resample(anomaly[[period]], fine_baseline, method = method)
+    coarse_value <- as_value(bring_onto_target(anomaly[[period]], target, method))
     if (type == "ratio") {
-      ratio <- coarse_value / coarse_baseline
-      ratio <- terra::ifel(is.finite(ratio), ratio, NA)   # guard a zero or missing baseline
-      periods[[period]] <- fine_baseline * ratio
+      periods[[period]] <- fine_baseline * safe_ratio(coarse_value, coarse_baseline)
     } else {
       periods[[period]] <- fine_baseline + (coarse_value - coarse_baseline)
     }
   }
-
-  out <- terra::rast(periods)
-  names(out) <- names(anomaly)
-  out
+  stats::setNames(periods, names(anomaly))
 }
 
 # Raster to a wide matrix (row i, column j of the matrix is raster row i, col j).

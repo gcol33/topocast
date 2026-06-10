@@ -1,6 +1,6 @@
 Package: topocast
 Title: Moving-Window Regression Downscaling of Raster Data
-Version: 0.0.2
+Version: 0.0.3
 Authors@R:
     person("Gilles", "Colling", email = "gilles.colling051@gmail.com",
            role = c("aut", "cre", "cph"),
@@ -26,7 +26,10 @@ Imports:
     terra (>= 1.7.0)
 Suggests:
     knitr,
+    raster,
     rmarkdown,
+    sf,
+    stars,
     svglite,
     testthat (>= 3.0.0)
 LinkingTo:

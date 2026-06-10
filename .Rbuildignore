@@ -4,7 +4,10 @@
 ^\.gitignore$
 ^dev_build\.R$
 ^dev_knit\.R$
+^dev_check\.R$
+^dev_pkgdown\.R$
 ^dev_notes$
+^verify_.*\.png$
 ^LICENSE\.md$
 ^README\.Rmd$
 ^_pkgdown\.yml$
