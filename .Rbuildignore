@@ -1,0 +1,8 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.gitignore$
+^dev_build\.R$
+^implementation_plan\.md$
+^LICENSE\.md$
+^README\.Rmd$
