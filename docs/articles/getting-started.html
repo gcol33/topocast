@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">topocast</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.3</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -45,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/getting-started.html">Getting started with topocast</a></li>
@@ -1466,6 +1466,293 @@ rather than dividing by zero.</p>
 </svg></div></p>
 </div>
 <div class="section level2">
+<h2 id="points-and-other-spatial-classes">Points and other spatial classes<a class="anchor" aria-label="anchor" href="#points-and-other-spatial-classes"></a>
+</h2>
+<p>A common target is a set of locations instead of a full grid:
+vegetation plots, weather stations, survey sites. Passing those points
+as <code>onto</code> evaluates the fitted relationship at each one and
+returns the points with a prediction column. The points carry the fine
+predictors as attributes; here they are read from the elevation
+model.</p>
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://r-spatial.github.io/sf/" class="external-link">sf</a></span><span class="op">)</span></span>
+<span><span class="co">#&gt; Linking to GEOS 3.14.1, GDAL 3.12.1, PROJ 9.7.1; sf_use_s2() is TRUE</span></span>
+<span></span>
+<span><span class="va">plots</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://r-spatial.github.io/sf/reference/st_as_sf.html" class="external-link">st_as_sf</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2000</span>, <span class="fl">4000</span>, <span class="fl">6000</span>, <span class="fl">8000</span>, <span class="fl">10000</span>, <span class="fl">5000</span><span class="op">)</span>,</span>
+<span>             y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3000</span>, <span class="fl">8000</span>, <span class="fl">5000</span>, <span class="fl">9000</span>,  <span class="fl">2000</span>, <span class="fl">6000</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  coords <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"x"</span>, <span class="st">"y"</span><span class="op">)</span>, crs <span class="op">=</span> <span class="st">"EPSG:32632"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">at_terrain</span> <span class="op">&lt;-</span> <span class="fu">terra</span><span class="fu">::</span><span class="fu"><a href="https://rspatial.github.io/terra/reference/extract.html" class="external-link">extract</a></span><span class="op">(</span><span class="va">terrain</span>, <span class="fu"><a href="https://rspatial.github.io/terra/reference/vect.html" class="external-link">vect</a></span><span class="op">(</span><span class="va">plots</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">plots</span><span class="op">$</span><span class="va">elev</span>  <span class="op">&lt;-</span> <span class="va">at_terrain</span><span class="op">$</span><span class="va">elev</span></span>
+<span><span class="va">plots</span><span class="op">$</span><span class="va">slope</span> <span class="op">&lt;-</span> <span class="va">at_terrain</span><span class="op">$</span><span class="va">slope</span></span>
+<span></span>
+<span><span class="va">at_plots</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span> <span class="op">+</span> <span class="va">slope</span>, data <span class="op">=</span> <span class="va">coarse</span>, onto <span class="op">=</span> <span class="va">plots</span>, radius <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="va">at_plots</span></span>
+<span><span class="co">#&gt; Simple feature collection with 6 features and 3 fields</span></span>
+<span><span class="co">#&gt; Geometry type: POINT</span></span>
+<span><span class="co">#&gt; Dimension:     XY</span></span>
+<span><span class="co">#&gt; Bounding box:  xmin: 2000 ymin: 2000 xmax: 10000 ymax: 9000</span></span>
+<span><span class="co">#&gt; Projected CRS: WGS 84 / UTM zone 32N</span></span>
+<span><span class="co">#&gt;             geometry      elev     slope     prec</span></span>
+<span><span class="co">#&gt; 1  POINT (2000 3000) 1676.9474 14.449248 657.9065</span></span>
+<span><span class="co">#&gt; 2  POINT (4000 8000) 1530.3309  8.444084 661.3340</span></span>
+<span><span class="co">#&gt; 3  POINT (6000 5000) 1281.9755 12.323577 717.4466</span></span>
+<span><span class="co">#&gt; 4  POINT (8000 9000) 1058.9375 17.128046 775.1305</span></span>
+<span><span class="co">#&gt; 5 POINT (10000 2000)  962.6333 12.706625 775.3137</span></span>
+<span><span class="co">#&gt; 6  POINT (5000 6000) 1346.0137  6.239848 683.3556</span></span></code></pre></div>
+<p>The fit at a point is the coarse coefficients interpolated to the
+location and applied to the point’s predictors, the same regression the
+grid path evaluates per cell. Overlaying the points on the downscaled
+field shows the two agree.</p>
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">pv</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/vect.html" class="external-link">vect</a></span><span class="op">(</span><span class="va">plots</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/plot.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">fine_prec2</span>, main <span class="op">=</span> <span class="st">"downscaled precipitation, with plot predictions"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/plot.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">pv</span>, add <span class="op">=</span> <span class="cn">TRUE</span>, pch <span class="op">=</span> <span class="fl">21</span>, cex <span class="op">=</span> <span class="fl">1.3</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/text.html" class="external-link">text</a></span><span class="op">(</span><span class="fu"><a href="https://rspatial.github.io/terra/reference/crds.html" class="external-link">crds</a></span><span class="op">(</span><span class="va">pv</span><span class="op">)</span>, labels <span class="op">=</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/math-generics.html" class="external-link">round</a></span><span class="op">(</span><span class="va">at_plots</span><span class="op">$</span><span class="va">prec</span><span class="op">)</span>, pos <span class="op">=</span> <span class="fl">3</span>, cex <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span></span></code></pre></div>
+<p><div class="svg-container"><button type="button" class="btn btn-primary btn-copy-svg" title="Copy SVG to clipboard" aria-label="Copy SVG to clipboard" data-bs-toggle="tooltip" data-bs-placement="left"><i class="fa fa-copy"></i></button>
+<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='504.00pt' height='259.20pt' viewBox='0 0 504.00 259.20' class="r-plt inline-svg" style="max-width:100%;width:100%;height:auto;">
+<g class='svglite'>
+<defs>
+  <style type='text/css'><![CDATA[
+    /* theme-aware-processed */
+    .svglite line, .svglite polyline, .svglite polygon, .svglite path, .svglite circle {
+      fill: none;
+      stroke: #3E3F3A;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-miterlimit: 10.00;
+    }
+    .svglite > g > rect {
+      fill: none;
+      stroke: #3E3F3A;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-miterlimit: 10.00;
+    }
+    .svglite text {
+      white-space: pre;
+      fill: #3E3F3A;
+    }
+    .svglite g.glyphgroup path {
+      fill: inherit;
+      stroke: none;
+    }
+  ]]></style>
+</defs>
+<rect width='100%' height='100%' style='stroke: none; fill: #F5F6F8;'/>
+<defs>
+  <clipPath id='cpMC4wMHw1MDQuMDB8MC4wMHwyNTkuMjA='>
+    <rect x='0.00' y='0.00' width='504.00' height='259.20' />
+  </clipPath>
+</defs>
+<g clip-path='url(#cpMC4wMHw1MDQuMDB8MC4wMHwyNTkuMjA=)'>
+</g>
+<defs>
+  <clipPath id='cpMTI5LjYwfDMzMS4yMHwyOC44MHwyMzAuNDA='>
+    <rect x='129.60' y='28.80' width='201.60' height='201.60' />
+  </clipPath>
+</defs>
+<g clip-path='url(#cpMTI5LjYwfDMzMS4yMHwyOC44MHwyMzAuNDA=)'>
+</g>
+<g clip-path='url(#cpMC4wMHw1MDQuMDB8MC4wMHwyNTkuMjA=)'>
+<text x='129.60' y='245.52' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='4.67px' lengthAdjust='spacingAndGlyphs'>0</text>
+<text x='213.60' y='245.52' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='18.69px' lengthAdjust='spacingAndGlyphs'>5000</text>
+<text x='297.60' y='245.52' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='23.36px' lengthAdjust='spacingAndGlyphs'>10000</text>
+<line x1='129.60' y1='230.40' x2='129.60' y2='234.00' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='213.60' y1='230.40' x2='213.60' y2='234.00' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='297.60' y1='230.40' x2='297.60' y2='234.00' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+</g>
+<defs>
+  <clipPath id='cpMjguODB8NDMyLjAwfDI4LjgwfDIzMC40MA=='>
+    <rect x='28.80' y='28.80' width='403.20' height='201.60' />
+  </clipPath>
+</defs>
+<g clip-path='url(#cpMjguODB8NDMyLjAwfDI4LjgwfDIzMC40MA==)'>
+<polyline points='331.20,230.40 129.60,230.40 ' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+</g>
+<g clip-path='url(#cpMC4wMHw1MDQuMDB8MC4wMHwyNTkuMjA=)'>
+<text transform='translate(122.40,230.40) rotate(-90)' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='4.67px' lengthAdjust='spacingAndGlyphs'>0</text>
+<text transform='translate(122.40,196.80) rotate(-90)' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='18.69px' lengthAdjust='spacingAndGlyphs'>2000</text>
+<text transform='translate(122.40,163.20) rotate(-90)' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='18.69px' lengthAdjust='spacingAndGlyphs'>4000</text>
+<text transform='translate(122.40,129.60) rotate(-90)' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='18.69px' lengthAdjust='spacingAndGlyphs'>6000</text>
+<text transform='translate(122.40,96.00) rotate(-90)' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='18.69px' lengthAdjust='spacingAndGlyphs'>8000</text>
+<text transform='translate(122.40,62.40) rotate(-90)' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='23.36px' lengthAdjust='spacingAndGlyphs'>10000</text>
+<text transform='translate(122.40,28.80) rotate(-90)' text-anchor='middle' style='font-size: 8.40px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='23.36px' lengthAdjust='spacingAndGlyphs'>12000</text>
+<line x1='129.60' y1='230.40' x2='126.00' y2='230.40' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='129.60' y1='196.80' x2='126.00' y2='196.80' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='129.60' y1='163.20' x2='126.00' y2='163.20' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='129.60' y1='129.60' x2='126.00' y2='129.60' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='129.60' y1='96.00' x2='126.00' y2='96.00' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='129.60' y1='62.40' x2='126.00' y2='62.40' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+<line x1='129.60' y1='28.80' x2='126.00' y2='28.80' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+</g>
+<g clip-path='url(#cpMjguODB8NDMyLjAwfDI4LjgwfDIzMC40MA==)'>
+<polyline points='129.60,230.40 129.60,28.80 ' style='stroke-width: 0.75; stroke: #BEBEBE;' />
+</g>
+<g clip-path='url(#cpMTI5LjYwfDMzMS4yMHwyOC44MHwyMzAuNDA=)'>
+<image width='201.60' height='201.60' x='129.60' y='28.80' preserveAspectRatio='none' image-rendering='pixelated' xlink:href='data:image/png;base64,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'/>
+</g>
+<g clip-path='url(#cpMC4wMHw1MDQuMDB8MC4wMHwyNTkuMjA=)'>
+<rect x='342.00' y='228.38' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #440154;' />
+<rect x='342.00' y='226.37' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #450458;' />
+<rect x='342.00' y='224.35' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #46085C;' />
+<rect x='342.00' y='222.34' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #460C5F;' />
+<rect x='342.00' y='220.32' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #471063;' />
+<rect x='342.00' y='218.30' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #471366;' />
+<rect x='342.00' y='216.29' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #481769;' />
+<rect x='342.00' y='214.27' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #481B6D;' />
+<rect x='342.00' y='212.26' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #481E6F;' />
+<rect x='342.00' y='210.24' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #482173;' />
+<rect x='342.00' y='208.22' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #482475;' />
+<rect x='342.00' y='206.21' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #482878;' />
+<rect x='342.00' y='204.19' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #472B7A;' />
+<rect x='342.00' y='202.18' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #472E7C;' />
+<rect x='342.00' y='200.16' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #46327E;' />
+<rect x='342.00' y='198.14' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #453480;' />
+<rect x='342.00' y='196.13' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #443882;' />
+<rect x='342.00' y='194.11' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #443A83;' />
+<rect x='342.00' y='192.10' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #423E85;' />
+<rect x='342.00' y='190.08' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #424086;' />
+<rect x='342.00' y='188.06' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #404487;' />
+<rect x='342.00' y='186.05' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #3F4788;' />
+<rect x='342.00' y='184.03' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #3E4989;' />
+<rect x='342.00' y='182.02' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #3D4D8A;' />
+<rect x='342.00' y='180.00' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #3C4F8A;' />
+<rect x='342.00' y='177.98' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #3A528B;' />
+<rect x='342.00' y='175.97' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #39548C;' />
+<rect x='342.00' y='173.95' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #38588C;' />
+<rect x='342.00' y='171.94' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #365B8D;' />
+<rect x='342.00' y='169.92' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #355D8D;' />
+<rect x='342.00' y='167.90' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #34608D;' />
+<rect x='342.00' y='165.89' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #33628D;' />
+<rect x='342.00' y='163.87' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #31658E;' />
+<rect x='342.00' y='161.86' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #30688E;' />
+<rect x='342.00' y='159.84' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2F6A8E;' />
+<rect x='342.00' y='157.82' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2E6D8E;' />
+<rect x='342.00' y='155.81' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2D6F8E;' />
+<rect x='342.00' y='153.79' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2C718E;' />
+<rect x='342.00' y='151.78' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2B738E;' />
+<rect x='342.00' y='149.76' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2A768E;' />
+<rect x='342.00' y='147.74' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #29798E;' />
+<rect x='342.00' y='145.73' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #287B8E;' />
+<rect x='342.00' y='143.71' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #277E8E;' />
+<rect x='342.00' y='141.70' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #26808E;' />
+<rect x='342.00' y='139.68' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #25828E;' />
+<rect x='342.00' y='137.66' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #25848E;' />
+<rect x='342.00' y='135.65' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #23878E;' />
+<rect x='342.00' y='133.63' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #228A8D;' />
+<rect x='342.00' y='131.62' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #228C8D;' />
+<rect x='342.00' y='129.60' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #218F8D;' />
+<rect x='342.00' y='127.58' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #20918C;' />
+<rect x='342.00' y='125.57' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #1F938C;' />
+<rect x='342.00' y='123.55' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #1F958B;' />
+<rect x='342.00' y='121.54' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #1F988A;' />
+<rect x='342.00' y='119.52' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #1E9B89;' />
+<rect x='342.00' y='117.50' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #1E9D89;' />
+<rect x='342.00' y='115.49' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #1FA088;' />
+<rect x='342.00' y='113.47' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #1FA187;' />
+<rect x='342.00' y='111.46' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #20A485;' />
+<rect x='342.00' y='109.44' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #21A685;' />
+<rect x='342.00' y='107.42' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #23A983;' />
+<rect x='342.00' y='105.41' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #25AC81;' />
+<rect x='342.00' y='103.39' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #27AD80;' />
+<rect x='342.00' y='101.38' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2AB07E;' />
+<rect x='342.00' y='99.36' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #2DB27C;' />
+<rect x='342.00' y='97.34' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #31B57A;' />
+<rect x='342.00' y='95.33' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #35B778;' />
+<rect x='342.00' y='93.31' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #39B976;' />
+<rect x='342.00' y='91.30' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #3DBC73;' />
+<rect x='342.00' y='89.28' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #41BD71;' />
+<rect x='342.00' y='87.26' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #46C06E;' />
+<rect x='342.00' y='85.25' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #4BC16C;' />
+<rect x='342.00' y='83.23' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #50C469;' />
+<rect x='342.00' y='81.22' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #56C666;' />
+<rect x='342.00' y='79.20' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #5BC863;' />
+<rect x='342.00' y='77.18' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #60CA5F;' />
+<rect x='342.00' y='75.17' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #66CB5C;' />
+<rect x='342.00' y='73.15' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #6CCD59;' />
+<rect x='342.00' y='71.14' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #72CF56;' />
+<rect x='342.00' y='69.12' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #78D152;' />
+<rect x='342.00' y='67.10' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #7FD34D;' />
+<rect x='342.00' y='65.09' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #85D449;' />
+<rect x='342.00' y='63.07' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #8BD645;' />
+<rect x='342.00' y='61.06' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #92D741;' />
+<rect x='342.00' y='59.04' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #99D83D;' />
+<rect x='342.00' y='57.02' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #9FD939;' />
+<rect x='342.00' y='55.01' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #A6DB34;' />
+<rect x='342.00' y='52.99' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #ADDC2F;' />
+<rect x='342.00' y='50.98' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #B4DD2B;' />
+<rect x='342.00' y='48.96' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #BADE27;' />
+<rect x='342.00' y='46.94' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #C1DF23;' />
+<rect x='342.00' y='44.93' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #C8E01F;' />
+<rect x='342.00' y='42.91' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #CFE11C;' />
+<rect x='342.00' y='40.90' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #D6E219;' />
+<rect x='342.00' y='38.88' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #DDE318;' />
+<rect x='342.00' y='36.86' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #E4E418;' />
+<rect x='342.00' y='34.85' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #EAE51A;' />
+<rect x='342.00' y='32.83' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #F0E51C;' />
+<rect x='342.00' y='30.82' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #F6E620;' />
+<rect x='342.00' y='28.80' width='10.80' height='2.02' style='stroke-width: 0.75; stroke: none; fill: #FDE725;' />
+<line x1='342.00' y1='208.64' x2='355.50' y2='208.64' style='stroke-width: 0.75;' />
+<line x1='342.00' y1='182.37' x2='355.50' y2='182.37' style='stroke-width: 0.75;' />
+<line x1='342.00' y1='156.09' x2='355.50' y2='156.09' style='stroke-width: 0.75;' />
+<line x1='342.00' y1='129.81' x2='355.50' y2='129.81' style='stroke-width: 0.75;' />
+<line x1='342.00' y1='103.53' x2='355.50' y2='103.53' style='stroke-width: 0.75;' />
+<line x1='342.00' y1='77.25' x2='355.50' y2='77.25' style='stroke-width: 0.75;' />
+<line x1='342.00' y1='50.98' x2='355.50' y2='50.98' style='stroke-width: 0.75;' />
+<text x='362.16' y='210.93' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>550</text>
+<text x='362.16' y='184.65' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>600</text>
+<text x='362.16' y='158.38' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>650</text>
+<text x='362.16' y='132.10' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>700</text>
+<text x='362.16' y='105.82' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>750</text>
+<text x='362.16' y='79.54' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>800</text>
+<text x='362.16' y='53.27' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>850</text>
+<rect x='342.00' y='28.80' width='10.80' height='201.60' style='stroke-width: 0.75;' />
+</g>
+<g clip-path='url(#cpMjguODB8NDMyLjAwfDI4LjgwfDIzMC40MA==)'>
+<polyline points='129.60,230.40 129.60,28.80 331.20,28.80 331.20,230.40 129.60,230.40 ' style='stroke-width: 0.75;' />
+</g>
+<g clip-path='url(#cpMC4wMHw1MDQuMDB8MC4wMHwyNTkuMjA=)'>
+<text x='230.40' y='21.60' text-anchor='middle' style='font-size: 14.40px; font-weight: bold; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='321.50px' lengthAdjust='spacingAndGlyphs'>downscaled precipitation, with plot predictions</text>
+</g>
+<g clip-path='url(#cpMTI5LjYwfDMzMS4yMHwyOC44MHwyMzAuNDA=)'>
+<circle cx='163.20' cy='180.00' r='3.51' style='stroke-width: 0.75;' />
+<circle cx='196.80' cy='96.00' r='3.51' style='stroke-width: 0.75;' />
+<circle cx='230.40' cy='146.40' r='3.51' style='stroke-width: 0.75;' />
+<circle cx='264.00' cy='79.20' r='3.51' style='stroke-width: 0.75;' />
+<circle cx='297.60' cy='196.80' r='3.51' style='stroke-width: 0.75;' />
+<circle cx='213.60' cy='129.60' r='3.51' style='stroke-width: 0.75;' />
+<text x='163.20' y='172.80' text-anchor='middle' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>658</text>
+<text x='196.80' y='88.80' text-anchor='middle' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>661</text>
+<text x='230.40' y='139.20' text-anchor='middle' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>717</text>
+<text x='264.00' y='72.00' text-anchor='middle' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>775</text>
+<text x='297.60' y='189.60' text-anchor='middle' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>775</text>
+<text x='213.60' y='122.40' text-anchor='middle' style='font-size: 9.60px; font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;' textLength='15.98px' lengthAdjust='spacingAndGlyphs'>683</text>
+</g>
+</g>
+</svg></div></p>
+<p>The same call returns a plain data frame of coordinates and
+predictions with <code>output = "data.frame"</code>, for joining back to
+a plot table.</p>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span> <span class="op">+</span> <span class="va">slope</span>, data <span class="op">=</span> <span class="va">coarse</span>, onto <span class="op">=</span> <span class="va">plots</span>, radius <span class="op">=</span> <span class="fl">4</span>,</span>
+<span>         output <span class="op">=</span> <span class="st">"data.frame"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;       x    y     prec</span></span>
+<span><span class="co">#&gt; 1  2000 3000 657.9065</span></span>
+<span><span class="co">#&gt; 2  4000 8000 661.3340</span></span>
+<span><span class="co">#&gt; 3  6000 5000 717.4466</span></span>
+<span><span class="co">#&gt; 4  8000 9000 775.1305</span></span>
+<span><span class="co">#&gt; 5 10000 2000 775.3137</span></span>
+<span><span class="co">#&gt; 6  5000 6000 683.3556</span></span></code></pre></div>
+<p>Gridded inputs are not tied to <code>SpatRaster</code> either. A
+<code>Raster*</code> object from the raster package or a
+<code>stars</code> object is accepted for <code>data</code> and
+<code>onto</code>, and the result is returned in the class it was given;
+<code>output</code> requests another. The class sets only the container
+for the result, and the numbers are the same.</p>
+</div>
+<div class="section level2">
 <h2 id="the-matrix-engine">The matrix engine<a class="anchor" aria-label="anchor" href="#the-matrix-engine"></a>
 </h2>
 <p><code><a href="../reference/topocast.html">topocast()</a></code> is a terra workflow over a matrix engine,
@@ -1473,7 +1760,7 @@ rather than dividing by zero.</p>
 regression on plain numeric matrices and returns the intercept and slope
 grids. It is useful for testing and for callers who already hold their
 data as matrices.</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/coerce.html" class="external-link">as.matrix</a></span><span class="op">(</span><span class="va">prec_coarse</span>, wide <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="fu"><a href="https://rspatial.github.io/terra/reference/coerce.html" class="external-link">as.matrix</a></span><span class="op">(</span><span class="va">elev_coarse</span>, wide <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>,</span>
 <span>          <span class="fu"><a href="https://rspatial.github.io/terra/reference/coerce.html" class="external-link">as.matrix</a></span><span class="op">(</span><span class="va">slope_coarse</span>, wide <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
@@ -1487,7 +1774,7 @@ data as matrices.</p>
 <p>The elevation slope recovers the coefficient we simulated. Over a
 window that spans most of the grid the local fit converges on the global
 value.</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">big</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/window_regression.html">window_regression</a></span><span class="op">(</span><span class="va">y</span>, <span class="va">x</span>, radius <span class="op">=</span> <span class="fl">19</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rspatial.github.io/terra/reference/math-generics.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rspatial.github.io/terra/reference/summarize-generics.html" class="external-link">median</a></span><span class="op">(</span><span class="va">big</span><span class="op">$</span><span class="va">slope</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>   <span class="co"># simulated -0.18</span></span>
 <span><span class="co">#&gt; [1] -0.178</span></span></code></pre></div>

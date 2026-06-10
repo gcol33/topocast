@@ -28,7 +28,7 @@ varying coefficients."></head><body><p>
 
     <a class="navbar-brand me-2" href="../index.html">topocast</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.3</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -86,6 +86,7 @@ varying coefficients.</p>
 <span>  baseline <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ratio"</span>, <span class="st">"additive"</span><span class="op">)</span>,</span>
 <span>  method <span class="op">=</span> <span class="st">"cubicspline"</span>,</span>
+<span>  output <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  min_cells <span class="op">=</span> <span class="fl">0L</span>,</span>
 <span>  min_variance <span class="op">=</span> <span class="fl">1e-08</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -102,14 +103,18 @@ varying coefficients.</p>
 
 
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
-<dd><p>A <code>SpatRaster</code> on the coarse grid holding the response layer and,
-optionally, predictor layers named in <code>formula</code>. Any predictor not in <code>data</code>
-is derived from <code>onto</code>.</p></dd>
+<dd><p>A gridded coarse input holding the response layer and, optionally,
+predictor layers named in <code>formula</code>: a <code>SpatRaster</code>, a <code>Raster*</code> (raster), or
+a <code>stars</code> object. Any predictor not in <code>data</code> is derived from <code>onto</code>.</p></dd>
 
 
 <dt id="arg-onto">onto<a class="anchor" aria-label="anchor" href="#arg-onto"></a></dt>
-<dd><p>A <code>SpatRaster</code> on the target grid holding every predictor layer
-named in <code>formula</code>. Its grid defines the output.</p></dd>
+<dd><p>The target. A gridded <code>SpatRaster</code>, <code>Raster*</code>, or <code>stars</code> object
+whose grid defines the output, holding every predictor layer named in
+<code>formula</code>; or an <code>sf</code>/<code>SpatVector</code> of points carrying those predictors as
+attributes, in which case the fit is evaluated at the points. With a point
+<code>onto</code> every predictor must be a layer of <code>data</code> (the derive-from-<code>onto</code>
+shortcut needs a grid).</p></dd>
 
 
 <dt id="arg-radius">radius<a class="anchor" aria-label="anchor" href="#arg-radius"></a></dt>
@@ -132,7 +137,7 @@ with <code>anomaly</code>. Default <code>FALSE</code>.</p></dd>
 <dt id="arg-anomaly">anomaly<a class="anchor" aria-label="anchor" href="#arg-anomaly"></a></dt>
 <dd><p>Optional multi-layer <code>SpatRaster</code> on the coarse grid; each layer
 is one period to downscale relative to <code>baseline</code>. When supplied, the result
-has one layer per period.</p></dd>
+has one layer (or column) per period.</p></dd>
 
 
 <dt id="arg-baseline">baseline<a class="anchor" aria-label="anchor" href="#arg-baseline"></a></dt>
@@ -151,15 +156,23 @@ Ignored when <code>anomaly</code> is <code>NULL</code>.</p></dd>
 <code><a href="https://rspatial.github.io/terra/reference/resample.html" class="external-link">terra::resample()</a></code>. Default <code>"cubicspline"</code>.</p></dd>
 
 
+<dt id="arg-output">output<a class="anchor" aria-label="anchor" href="#arg-output"></a></dt>
+<dd><p>Optional output class, one of <code>"terra"</code>, <code>"raster"</code>, <code>"stars"</code>
+(grid targets) or <code>"terra"</code>, <code>"sf"</code>, <code>"spatvector"</code>, <code>"data.frame"</code> (point
+targets). Default <code>NULL</code> returns the result in the class of <code>onto</code>.</p></dd>
+
+
 <dt id="arg-min-cells-min-variance">min_cells, min_variance<a class="anchor" aria-label="anchor" href="#arg-min-cells-min-variance"></a></dt>
 <dd><p>Passed to <code><a href="window_regression.html">window_regression()</a></code>.</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A <code>SpatRaster</code> on the grid of <code>onto</code>. By default a single layer named
-for the response; one layer per period when <code>anomaly</code> is supplied; or the
-fitted layer plus <code>(Intercept)</code> and slope grids when <code>coefficients = TRUE</code>.</p>
+    <p>The downscaled result on the geometry of <code>onto</code>, in the class of <code>onto</code>
+or the class named by <code>output</code>. For a grid target: a single layer named for
+the response; one layer per period when <code>anomaly</code> is supplied; or the fitted
+layer plus <code>(Intercept)</code> and slope grids when <code>coefficients = TRUE</code>. For a
+point target the same quantities are returned as prediction columns.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -181,6 +194,13 @@ relationship is fit once and each period's coarse anomaly, relative to
 <code>baseline</code>, is carried onto the fine baseline. Use <code>type = "ratio"</code> for
 non-negative variables such as precipitation and <code>type = "additive"</code> for
 variables such as temperature.</p>
+<p><code>data</code> and <code>onto</code> may be any of the common spatial classes. A gridded input is
+accepted as a <code>SpatRaster</code>, a <code>Raster*</code> object (raster), or a <code>stars</code> object.
+The target <code>onto</code> may instead be a set of points as an <code>sf</code> or <code>SpatVector</code>
+object, in which case the fitted relationship is evaluated at each point and a
+prediction column is returned; the points must carry the fine predictor values
+as attributes. By default the result is returned in the class of <code>onto</code>; set
+<code>output</code> to request another.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -191,7 +211,8 @@ variables such as temperature.</p>
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://rspatial.org/" class="external-link">terra</a></span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">coarse</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/rast.html" class="external-link">rast</a></span><span class="op">(</span>nrows <span class="op">=</span> <span class="fl">20</span>, ncols <span class="op">=</span> <span class="fl">20</span>, xmin <span class="op">=</span> <span class="fl">0</span>, xmax <span class="op">=</span> <span class="fl">20</span>, ymin <span class="op">=</span> <span class="fl">0</span>, ymax <span class="op">=</span> <span class="fl">20</span><span class="op">)</span></span>
+<span><span class="va">coarse</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/rast.html" class="external-link">rast</a></span><span class="op">(</span>nrows <span class="op">=</span> <span class="fl">20</span>, ncols <span class="op">=</span> <span class="fl">20</span>, xmin <span class="op">=</span> <span class="fl">0</span>, xmax <span class="op">=</span> <span class="fl">20</span>, ymin <span class="op">=</span> <span class="fl">0</span>, ymax <span class="op">=</span> <span class="fl">20</span>,</span>
+<span>               crs <span class="op">=</span> <span class="st">"EPSG:32632"</span><span class="op">)</span></span>
 <span><span class="va">elevation</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/setValues.html" class="external-link">setValues</a></span><span class="op">(</span><span class="va">coarse</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="fu"><a href="https://rspatial.github.io/terra/reference/dimensions.html" class="external-link">ncell</a></span><span class="op">(</span><span class="va">coarse</span><span class="op">)</span>, <span class="fl">0</span>, <span class="fl">2000</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">precipitation</span> <span class="op">&lt;-</span> <span class="fl">800</span> <span class="op">-</span> <span class="fl">0.1</span> <span class="op">*</span> <span class="va">elevation</span></span>
 <span><span class="va">data</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">precipitation</span>, <span class="va">elevation</span><span class="op">)</span></span>
@@ -214,6 +235,14 @@ variables such as temperature.</p>
 <span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">months</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"jan"</span>, <span class="st">"feb"</span><span class="op">)</span></span>
 <span><span class="va">series</span> <span class="op">&lt;-</span> <span class="fu">topocast</span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">data</span>, onto <span class="op">=</span> <span class="va">terrain</span>, radius <span class="op">=</span> <span class="fl">4</span>,</span>
 <span>                   anomaly <span class="op">=</span> <span class="va">months</span>, type <span class="op">=</span> <span class="st">"ratio"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># predict at point locations: onto is sf points carrying the predictor</span></span>
+<span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"sf"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">plots</span> <span class="op">&lt;-</span> <span class="fu">sf</span><span class="fu">::</span><span class="fu"><a href="https://r-spatial.github.io/sf/reference/st_as_sf.html" class="external-link">st_as_sf</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">10</span>, <span class="fl">15</span><span class="op">)</span>, y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">10</span>, <span class="fl">15</span><span class="op">)</span>, elev <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">500</span>, <span class="fl">1000</span>, <span class="fl">1500</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    coords <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"x"</span>, <span class="st">"y"</span><span class="op">)</span>, crs <span class="op">=</span> <span class="st">"EPSG:32632"</span><span class="op">)</span></span>
+<span>  <span class="va">at_plots</span> <span class="op">&lt;-</span> <span class="fu">topocast</span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">data</span>, onto <span class="op">=</span> <span class="va">plots</span>, radius <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
 <span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

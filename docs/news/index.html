@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">topocast</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.3</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -56,6 +56,13 @@
       <small>Source: <a href="https://github.com/gcol33/topocast/blob/HEAD/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.0.3" id="topocast-003">topocast 0.0.3<a class="anchor" aria-label="anchor" href="#topocast-003"></a></h2>
+<ul><li>
+<code>data</code> and <code>onto</code> accept <code>Raster*</code> (raster) and <code>stars</code> objects in addition to <code>SpatRaster</code>, and the result is returned in the class of <code>onto</code>. The new <code>output</code> argument requests a specific class.</li>
+<li>
+<code>onto</code> may be an <code>sf</code> or <code>SpatVector</code> of points: the fitted relationship is evaluated at each point and returned as a prediction column, with the points carrying the fine predictor values as attributes. This makes downscaling to station or plot locations a single call. The <code>coefficients</code> and <code>anomaly</code> results are returned as columns in the same way.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.0.2" id="topocast-002">topocast 0.0.2<a class="anchor" aria-label="anchor" href="#topocast-002"></a></h2>
 <ul><li>

@@ -1,5 +1,17 @@
 # Changelog
 
+## topocast 0.0.3
+
+- `data` and `onto` accept `Raster*` (raster) and `stars` objects in
+  addition to `SpatRaster`, and the result is returned in the class of
+  `onto`. The new `output` argument requests a specific class.
+- `onto` may be an `sf` or `SpatVector` of points: the fitted
+  relationship is evaluated at each point and returned as a prediction
+  column, with the points carrying the fine predictor values as
+  attributes. This makes downscaling to station or plot locations a
+  single call. The `coefficients` and `anomaly` results are returned as
+  columns in the same way.
+
 ## topocast 0.0.2
 
 - [`topocast()`](https://gillescolling.com/topocast/reference/topocast.md)

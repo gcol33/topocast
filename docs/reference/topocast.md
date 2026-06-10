@@ -20,6 +20,7 @@ topocast(
   baseline = NULL,
   type = c("ratio", "additive"),
   method = "cubicspline",
+  output = NULL,
   min_cells = 0L,
   min_variance = 1e-08
 )
@@ -35,14 +36,19 @@ topocast(
 
 - data:
 
-  A `SpatRaster` on the coarse grid holding the response layer and,
-  optionally, predictor layers named in `formula`. Any predictor not in
-  `data` is derived from `onto`.
+  A gridded coarse input holding the response layer and, optionally,
+  predictor layers named in `formula`: a `SpatRaster`, a `Raster*`
+  (raster), or a `stars` object. Any predictor not in `data` is derived
+  from `onto`.
 
 - onto:
 
-  A `SpatRaster` on the target grid holding every predictor layer named
-  in `formula`. Its grid defines the output.
+  The target. A gridded `SpatRaster`, `Raster*`, or `stars` object whose
+  grid defines the output, holding every predictor layer named in
+  `formula`; or an `sf`/`SpatVector` of points carrying those predictors
+  as attributes, in which case the fit is evaluated at the points. With
+  a point `onto` every predictor must be a layer of `data` (the
+  derive-from-`onto` shortcut needs a grid).
 
 - radius:
 
@@ -66,7 +72,7 @@ topocast(
 
   Optional multi-layer `SpatRaster` on the coarse grid; each layer is
   one period to downscale relative to `baseline`. When supplied, the
-  result has one layer per period.
+  result has one layer (or column) per period.
 
 - baseline:
 
@@ -84,6 +90,12 @@ topocast(
   [`terra::resample()`](https://rspatial.github.io/terra/reference/resample.html).
   Default `"cubicspline"`.
 
+- output:
+
+  Optional output class, one of `"terra"`, `"raster"`, `"stars"` (grid
+  targets) or `"terra"`, `"sf"`, `"spatvector"`, `"data.frame"` (point
+  targets). Default `NULL` returns the result in the class of `onto`.
+
 - min_cells, min_variance:
 
   Passed to
@@ -91,10 +103,12 @@ topocast(
 
 ## Value
 
-A `SpatRaster` on the grid of `onto`. By default a single layer named
+The downscaled result on the geometry of `onto`, in the class of `onto`
+or the class named by `output`. For a grid target: a single layer named
 for the response; one layer per period when `anomaly` is supplied; or
 the fitted layer plus `(Intercept)` and slope grids when
-`coefficients = TRUE`.
+`coefficients = TRUE`. For a point target the same quantities are
+returned as prediction columns.
 
 ## Details
 
@@ -121,6 +135,15 @@ relative to `baseline`, is carried onto the fine baseline. Use
 `type = "ratio"` for non-negative variables such as precipitation and
 `type = "additive"` for variables such as temperature.
 
+`data` and `onto` may be any of the common spatial classes. A gridded
+input is accepted as a `SpatRaster`, a `Raster*` object (raster), or a
+`stars` object. The target `onto` may instead be a set of points as an
+`sf` or `SpatVector` object, in which case the fitted relationship is
+evaluated at each point and a prediction column is returned; the points
+must carry the fine predictor values as attributes. By default the
+result is returned in the class of `onto`; set `output` to request
+another.
+
 ## See also
 
 [`window_regression()`](https://gillescolling.com/topocast/reference/window_regression.md)
@@ -131,7 +154,8 @@ for the matrix engine.
 ``` r
 library(terra)
 set.seed(1)
-coarse <- rast(nrows = 20, ncols = 20, xmin = 0, xmax = 20, ymin = 0, ymax = 20)
+coarse <- rast(nrows = 20, ncols = 20, xmin = 0, xmax = 20, ymin = 0, ymax = 20,
+               crs = "EPSG:32632")
 elevation <- setValues(coarse, runif(ncell(coarse), 0, 2000))
 precipitation <- 800 - 0.1 * elevation
 data <- c(precipitation, elevation)
@@ -154,4 +178,12 @@ months <- precipitation * c(0.8, 1.2)
 names(months) <- c("jan", "feb")
 series <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
                    anomaly = months, type = "ratio")
+
+# predict at point locations: onto is sf points carrying the predictor
+if (requireNamespace("sf", quietly = TRUE)) {
+  plots <- sf::st_as_sf(
+    data.frame(x = c(5, 10, 15), y = c(5, 10, 15), elev = c(500, 1000, 1500)),
+    coords = c("x", "y"), crs = "EPSG:32632")
+  at_plots <- topocast(prec ~ elev, data = data, onto = plots, radius = 4)
+}
 ```

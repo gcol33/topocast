@@ -230,6 +230,81 @@ plot(series[["jul"]], main = "July (100 m)")
 
 ![](getting-started_files/figure-html/plot-series-1.svg)
 
+## Points and other spatial classes
+
+A common target is a set of locations instead of a full grid: vegetation
+plots, weather stations, survey sites. Passing those points as `onto`
+evaluates the fitted relationship at each one and returns the points
+with a prediction column. The points carry the fine predictors as
+attributes; here they are read from the elevation model.
+
+``` r
+
+library(sf)
+#> Linking to GEOS 3.14.1, GDAL 3.12.1, PROJ 9.7.1; sf_use_s2() is TRUE
+
+plots <- st_as_sf(
+  data.frame(x = c(2000, 4000, 6000, 8000, 10000, 5000),
+             y = c(3000, 8000, 5000, 9000,  2000, 6000)),
+  coords = c("x", "y"), crs = "EPSG:32632")
+
+at_terrain <- terra::extract(terrain, vect(plots))
+plots$elev  <- at_terrain$elev
+plots$slope <- at_terrain$slope
+
+at_plots <- topocast(prec ~ elev + slope, data = coarse, onto = plots, radius = 4)
+at_plots
+#> Simple feature collection with 6 features and 3 fields
+#> Geometry type: POINT
+#> Dimension:     XY
+#> Bounding box:  xmin: 2000 ymin: 2000 xmax: 10000 ymax: 9000
+#> Projected CRS: WGS 84 / UTM zone 32N
+#>             geometry      elev     slope     prec
+#> 1  POINT (2000 3000) 1676.9474 14.449248 657.9065
+#> 2  POINT (4000 8000) 1530.3309  8.444084 661.3340
+#> 3  POINT (6000 5000) 1281.9755 12.323577 717.4466
+#> 4  POINT (8000 9000) 1058.9375 17.128046 775.1305
+#> 5 POINT (10000 2000)  962.6333 12.706625 775.3137
+#> 6  POINT (5000 6000) 1346.0137  6.239848 683.3556
+```
+
+The fit at a point is the coarse coefficients interpolated to the
+location and applied to the point’s predictors, the same regression the
+grid path evaluates per cell. Overlaying the points on the downscaled
+field shows the two agree.
+
+``` r
+
+pv <- vect(plots)
+plot(fine_prec2, main = "downscaled precipitation, with plot predictions")
+plot(pv, add = TRUE, pch = 21, cex = 1.3)
+text(crds(pv), labels = round(at_plots$prec), pos = 3, cex = 0.8)
+```
+
+![](getting-started_files/figure-html/plot-points-1.svg)
+
+The same call returns a plain data frame of coordinates and predictions
+with `output = "data.frame"`, for joining back to a plot table.
+
+``` r
+
+topocast(prec ~ elev + slope, data = coarse, onto = plots, radius = 4,
+         output = "data.frame")
+#>       x    y     prec
+#> 1  2000 3000 657.9065
+#> 2  4000 8000 661.3340
+#> 3  6000 5000 717.4466
+#> 4  8000 9000 775.1305
+#> 5 10000 2000 775.3137
+#> 6  5000 6000 683.3556
+```
+
+Gridded inputs are not tied to `SpatRaster` either. A `Raster*` object
+from the raster package or a `stars` object is accepted for `data` and
+`onto`, and the result is returned in the class it was given; `output`
+requests another. The class sets only the container for the result, and
+the numbers are the same.
+
 ## The matrix engine
 
 [`topocast()`](https://gillescolling.com/topocast/reference/topocast.md)
