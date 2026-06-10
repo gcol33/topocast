@@ -1,0 +1,23 @@
+url: https://gillescolling.com/topocast/
+template:
+  bootstrap: 5
+  light-switch: yes
+  includes:
+    in_header: pkgdown/mathjax-config.html
+figures:
+  dev: svglite
+  fig.ext: svg
+  bg: '#F5F6F8'
+reference:
+- title: Downscaling
+  desc: Downscale a coarse raster onto fine terrain.
+  contents: topocast
+- title: Engine
+  desc: The terra-free matrix kernel.
+  contents: window_regression
+articles:
+- title: Articles
+  navbar: ~
+  contents:
+  - getting-started
+  - how-it-works

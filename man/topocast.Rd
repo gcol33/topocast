@@ -9,6 +9,8 @@ topocast(
   data,
   onto,
   radius,
+  aggregate = "average",
+  coefficients = FALSE,
   anomaly = NULL,
   baseline = NULL,
   type = c("ratio", "additive"),
@@ -20,17 +22,25 @@ topocast(
 \arguments{
 \item{formula}{A two-sided formula of bare layer names, such as
 \code{prec ~ elev + slope}. The left-hand side names the coarse response layer in
-\code{data}; the right-hand side names the predictor layers in both \code{data} and
-\code{onto}.}
+\code{data}; the right-hand side names the predictor layers.}
 
-\item{data}{A \code{SpatRaster} on the coarse grid holding the response layer and
-every predictor layer named in \code{formula}.}
+\item{data}{A \code{SpatRaster} on the coarse grid holding the response layer and,
+optionally, predictor layers named in \code{formula}. Any predictor not in \code{data}
+is derived from \code{onto}.}
 
 \item{onto}{A \code{SpatRaster} on the target grid holding every predictor layer
 named in \code{formula}. Its grid defines the output.}
 
 \item{radius}{Integer window radius in coarse cells; the window is a square of
 side \code{2 * radius + 1}.}
+
+\item{aggregate}{Resampling method used to derive a coarse predictor from
+\code{onto} when it is not already a layer of \code{data}, passed to
+\code{\link[terra:resample]{terra::resample()}}. Default \code{"average"}.}
+
+\item{coefficients}{If \code{TRUE}, return the fitted layer together with the
+\code{(Intercept)} and per-predictor slope grids on the \code{onto} grid. Not supported
+with \code{anomaly}. Default \code{FALSE}.}
 
 \item{anomaly}{Optional multi-layer \code{SpatRaster} on the coarse grid; each layer
 is one period to downscale relative to \code{baseline}. When supplied, the result
@@ -43,14 +53,15 @@ Ignored when \code{anomaly} is \code{NULL}.}
 \item{type}{\code{"ratio"} (multiplicative) or \code{"additive"}; used only with
 \code{anomaly}.}
 
-\item{method}{Resampling method for the coarse grids, passed to
+\item{method}{Resampling method for the coefficient grids, passed to
 \code{\link[terra:resample]{terra::resample()}}. Default \code{"cubicspline"}.}
 
 \item{min_cells, min_variance}{Passed to \code{\link[=window_regression]{window_regression()}}.}
 }
 \value{
-A \code{SpatRaster} on the grid of \code{onto}: a single layer named for the
-response, or one layer per period of \code{anomaly} when that is supplied.
+A \code{SpatRaster} on the grid of \code{onto}. By default a single layer named
+for the response; one layer per period when \code{anomaly} is supplied; or the
+fitted layer plus \code{(Intercept)} and slope grids when \code{coefficients = TRUE}.
 }
 \description{
 Fits a local linear regression of a coarse response on one or more coarse
@@ -68,6 +79,12 @@ so a missing or mis-ordered layer is an error rather than a silently wrong
 result. Only bare layer names combined with \code{+} are supported, such as
 \code{prec ~ elev + slope}. Transformations (\code{log(elev)}), interactions
 (\code{elev:slope}), and \code{.} are rejected; create the derived layer first.
+
+In the common case there is one coarse response and a fine predictor such as a
+digital elevation model, and no coarse predictor in hand. A predictor named in
+the formula but absent from \code{data} is then derived by aggregating its \code{onto}
+layer to the response grid with \code{aggregate}, so \code{topocast(prec ~ elev, data = prec_coarse, onto = dem_fine, radius = 15)} works directly from a coarse
+climate layer and a fine DEM.
 
 For a time series, supply \code{anomaly}: a stack of coarse periods. The baseline
 relationship is fit once and each period's coarse anomaly, relative to
@@ -89,7 +106,14 @@ names(terrain) <- "elev"
 # spatial downscale
 fine <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4)
 
-# time series: same verb, supply the periods
+# one-DEM shortcut: the coarse predictor is derived from the fine DEM
+fine2 <- topocast(prec ~ elev, data = data[["prec"]], onto = terrain, radius = 4)
+
+# return the local coefficient grids
+coef_grids <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
+                       coefficients = TRUE)
+
+# time series: supply the periods
 months <- precipitation * c(0.8, 1.2)
 names(months) <- c("jan", "feb")
 series <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,

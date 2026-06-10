@@ -1,3 +1,16 @@
+# topocast 0.0.2
+
+* `topocast()` derives a coarse predictor from `onto` when the predictor named in
+  the formula is not a layer of `data`, aggregating it to the response grid with
+  the new `aggregate` argument. The one-DEM case is now a single call from a
+  coarse climate layer and a fine elevation model (#1).
+* `coefficients = TRUE` returns the fitted layer together with the `(Intercept)`
+  and per-predictor slope grids on the `onto` grid, so the local relationship,
+  such as a precipitation lapse rate, can be mapped (#2).
+* Coordinate reference systems that share an EPSG code are treated as equal even
+  when their WKT strings differ, as happens with cross-source lon/lat data. A
+  genuine mismatch now names both systems and suggests how to align them (#3).
+
 # topocast 0.0.1
 
 * First release.

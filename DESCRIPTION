@@ -1,6 +1,6 @@
 Package: topocast
 Title: Moving-Window Regression Downscaling of Raster Data
-Version: 0.0.1
+Version: 0.0.2
 Authors@R:
     person("Gilles", "Colling", email = "gilles.colling051@gmail.com",
            role = c("aut", "cre", "cph"),
@@ -25,11 +25,15 @@ Imports:
     Rcpp (>= 1.0.0),
     terra (>= 1.7.0)
 Suggests:
+    knitr,
+    rmarkdown,
+    svglite,
     testthat (>= 3.0.0)
 LinkingTo:
     Rcpp,
     RcppArmadillo
 SystemRequirements: C++17
+VignetteBuilder: knitr
 URL: https://gillescolling.com/topocast/, https://github.com/gcol33/topocast
 BugReports: https://github.com/gcol33/topocast/issues
 Config/testthat/edition: 3

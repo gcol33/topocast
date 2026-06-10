@@ -3,6 +3,13 @@
 ^\.git$
 ^\.gitignore$
 ^dev_build\.R$
-^implementation_plan\.md$
+^dev_knit\.R$
+^dev_notes$
 ^LICENSE\.md$
 ^README\.Rmd$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^build_site\.R$
+^\.github$
+^cran-comments\.md$

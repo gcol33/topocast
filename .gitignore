@@ -6,3 +6,8 @@ src/*.o
 src/*.so
 src/*.dll
 *.tar.gz
+verify_*.png
+dev_knit.R
+dev_check.R
+dev_pkgdown.R
+figure/
