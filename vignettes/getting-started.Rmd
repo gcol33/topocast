@@ -124,6 +124,30 @@ debugging session over a quietly wrong raster.
 topocast(prec ~ elev + aspect, data = coarse, onto = terrain, radius = 4)
 ```
 
+## Several responses at once
+
+Climate work rarely stops at one variable. Precipitation and temperature share
+the same terrain, so they share the moving-window design. Naming them together on
+the left-hand side with `cbind()` fits all of them in one pass: the window
+cross-products that make up the design are built and factored once, then solved
+against each response, so a second response costs little more than the first.
+
+```{r several-responses}
+tmin_coarse <- 8 - 0.006 * elev_coarse +
+  setValues(elev_coarse, rnorm(ncell(elev_coarse), 0, 0.5))
+names(tmin_coarse) <- "tmin"
+climate <- c(prec_coarse, tmin_coarse, elev_coarse, slope_coarse)
+
+both <- topocast(cbind(prec, tmin) ~ elev + slope, data = climate, onto = terrain,
+                 radius = 4)
+both
+```
+
+The result carries one layer per response, named for it, and each layer matches
+the single-response call. The shared design saves the repeated fitting, not the
+numbers. The valid-cell mask is complete-case across the responses: a coarse cell
+enters a window only where every response and predictor is finite.
+
 ## The one-DEM shortcut
 
 The common case has one coarse climate layer and one fine elevation model, and no
@@ -166,6 +190,20 @@ The slope layer is the local precipitation lapse rate. Where it is steep,
 elevation explains most of the variation in precipitation; where it is near zero,
 the terrain carries little signal and the downscaled field stays close to the
 coarse input.
+
+## Where the fit is strong
+
+How much of the response the terrain actually explains varies across the map.
+`diagnostics = TRUE` returns that as an `r.squared` grid: the coefficient of
+determination of each window fit, carried onto the fine grid. High values mark
+where the terrain relationship is tight and the downscaling adds real detail; low
+values mark where the fitted field rests mostly on the coarse level.
+
+```{r diagnostics, fig.height = 3.6}
+fit_quality <- topocast(prec ~ elev + slope, data = coarse, onto = terrain,
+                        radius = 4, diagnostics = TRUE)
+plot(fit_quality[["r.squared"]], main = "local R-squared", range = c(0, 1))
+```
 
 ## A time series
 
@@ -301,6 +339,13 @@ predictor, or inspect the slope grid (via `coefficients = TRUE`) for noise.
 not a layer of `data`, it is aggregated from `onto` to the response grid with
 `aggregate`, a cell average by default. Set it to another [terra::resample()]
 method if a different aggregation suits the predictor.
+
+**Clamping extreme terrain.** The downscaled field is a regression surface, so
+where the fine predictor reaches values the coarse window never saw, the local
+slope keeps extrapolating linearly. `clamp = TRUE` bounds the result to the
+observed range of the coarse response, a guard against runaway values at extreme
+elevation. The `r.squared` grid from `diagnostics = TRUE` shows where such a fit
+is weak in the first place.
 
 **What the output conserves.** The downscaled field is a regression surface
 evaluated on the fine predictors. Averaging it back to the coarse grid does not

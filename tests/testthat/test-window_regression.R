@@ -4,6 +4,7 @@ window_regression_ref <- function(y, x, radius, min_cells = 0L, min_variance = 1
   if (is.matrix(x)) x <- list(x)
   rows <- nrow(y); cols <- ncol(y); k <- length(x)
   intercept <- matrix(NA_real_, rows, cols)
+  r_squared <- matrix(NA_real_, rows, cols)
   slope <- replicate(k, matrix(NA_real_, rows, cols), simplify = FALSE)
   for (row in seq_len(rows)) for (col in seq_len(cols)) {
     row_range <- max(1, row - radius):min(rows, row + radius)
@@ -17,11 +18,13 @@ window_regression_ref <- function(y, x, radius, min_cells = 0L, min_variance = 1
     x_valid <- x_window[valid, , drop = FALSE]
     predictor_variance <- apply(x_valid, 2, function(v) mean(v^2) - mean(v)^2)
     if (any(predictor_variance < min_variance)) next
-    coef <- stats::lm.fit(cbind(1, x_valid), y_valid)$coefficients
-    intercept[row, col] <- coef[1]
-    for (j in seq_len(k)) slope[[j]][row, col] <- coef[1 + j]
+    fit <- stats::lm.fit(cbind(1, x_valid), y_valid)
+    intercept[row, col] <- fit$coefficients[1]
+    for (j in seq_len(k)) slope[[j]][row, col] <- fit$coefficients[1 + j]
+    sst <- sum((y_valid - mean(y_valid))^2)
+    if (sst > 0) r_squared[row, col] <- max(0, min(1, 1 - sum(fit$residuals^2) / sst))
   }
-  list(intercept = intercept, slope = slope)
+  list(intercept = intercept, slope = slope, r_squared = r_squared)
 }
 
 test_that("exact linear data is recovered", {
@@ -73,4 +76,51 @@ test_that("a predictor with no spread yields NA", {
   fit <- window_regression(climate, flat, radius = 3)
   expect_true(all(is.na(fit$slope[[1]])))
   expect_true(all(is.na(fit$intercept)))
+})
+
+test_that("exact linear data has r_squared 1, noisy data matches the oracle", {
+  set.seed(21)
+  elevation <- matrix(runif(144, 0, 2000), 12, 12)
+  exact <- 30 - 0.006 * elevation
+  fit_exact <- window_regression(exact, elevation, radius = 4)
+  finite <- is.finite(fit_exact$r_squared)
+  expect_true(all(fit_exact$r_squared[finite] > 1 - 1e-8))
+
+  x1 <- matrix(runif(150, 0, 2500), 10, 15)
+  x2 <- matrix(runif(150, 0, 50), 10, 15)
+  y <- 5 - 0.004 * x1 + 0.2 * x2 + matrix(rnorm(150, 0, 0.3), 10, 15)
+  fit <- window_regression(y, list(x1, x2), radius = 4)
+  ref <- window_regression_ref(y, list(x1, x2), radius = 4)
+  expect_equal(fit$r_squared, ref$r_squared, tolerance = 1e-6)
+})
+
+test_that("several responses match per-response single fits and are named", {
+  set.seed(22)
+  elevation <- matrix(runif(120, 0, 3000), 10, 12)
+  rain <- 800 - 0.1 * elevation + matrix(rnorm(120, 0, 5), 10, 12)
+  temp <- 15 - 0.006 * elevation + matrix(rnorm(120, 0, 0.3), 10, 12)
+
+  multi <- window_regression(list(rain = rain, temp = temp), elevation, radius = 3)
+  expect_equal(names(multi$slope), c("rain", "temp"))
+  expect_equal(names(multi$intercept), c("rain", "temp"))
+
+  one_rain <- window_regression(rain, elevation, radius = 3)
+  one_temp <- window_regression(temp, elevation, radius = 3)
+  expect_equal(multi$slope[["rain"]][[1]], one_rain$slope[[1]])
+  expect_equal(multi$slope[["temp"]][[1]], one_temp$slope[[1]])
+  expect_equal(multi$r_squared[["temp"]], one_temp$r_squared)
+})
+
+test_that("the complete-case mask is shared across responses", {
+  set.seed(23)
+  elevation <- matrix(runif(120, 0, 3000), 10, 12)
+  rain <- 800 - 0.1 * elevation + matrix(rnorm(120, 0, 5), 10, 12)
+  temp <- 15 - 0.006 * elevation + matrix(rnorm(120, 0, 0.3), 10, 12)
+  temp[4, 5] <- NA   # missing in one response only
+
+  multi <- window_regression(list(rain, temp), elevation, radius = 2)
+  # the shared mask drops cell (4,5) from rain's fit too: rain alone keeps it.
+  rain_masked <- rain; rain_masked[4, 5] <- NA
+  ref <- window_regression_ref(rain_masked, elevation, radius = 2)
+  expect_equal(multi$slope[[1]][[1]], ref$slope[[1]], tolerance = 1e-6)
 })

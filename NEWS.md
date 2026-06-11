@@ -1,3 +1,21 @@
+# topocast 0.0.4
+
+* Several responses that share the predictors are downscaled in one call by naming
+  them as `cbind(prec, tmin) ~ elev`. The moving-window design depends only on the
+  predictors, so it is assembled and factored once and solved against every response;
+  each extra response adds only a back-substitution. The result has one layer (or
+  column) per response, and `coefficients`/`diagnostics` grids are prefixed by the
+  response name. `window_regression()` likewise accepts a list of response matrices.
+* `diagnostics = TRUE` returns an `r.squared` grid: the per-window coefficient of
+  determination of the local fit, computed from the same summed-area sufficient
+  statistics, mapping where the terrain relationship is strong. `window_regression()`
+  now returns `r_squared` alongside `intercept` and `slope`.
+* `clamp = TRUE` bounds the downscaled field to the observed range of the coarse
+  response, a guard against the local linear fit extrapolating without limit where a
+  fine predictor lies outside the range it was fit on.
+* The per-cell window solve runs in parallel with OpenMP where the toolchain
+  provides it; results are unchanged.
+
 # topocast 0.0.3
 
 * `data` and `onto` accept `Raster*` (raster) and `stars` objects in addition to

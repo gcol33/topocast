@@ -33,6 +33,73 @@ test_that("the formula rejects non-additive and ill-formed terms", {
                list(response = "prec", predictors = c("elev", "slope")))
 })
 
+test_that("the formula parses cbind() of bare names and rejects other left sides", {
+  expect_equal(topocast:::parse_topo_formula(cbind(prec, temp) ~ elev + slope),
+               list(response = c("prec", "temp"), predictors = c("elev", "slope")))
+  expect_error(topocast:::parse_topo_formula(cbind(log(prec), temp) ~ elev),
+               "bare layer names")
+  expect_error(topocast:::parse_topo_formula(prec + temp ~ elev), "single bare layer name")
+})
+
+test_that("cbind() downscales several responses, each equal to its single call", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  temp <- 25 - 0.006 * grids$data[["elev"]]
+  names(temp) <- "temp"
+  data2 <- c(grids$data, temp)
+
+  multi <- topocast(cbind(prec, temp) ~ elev + slope, data = data2,
+                    onto = grids$terrain, radius = 3)
+  expect_equal(names(multi), c("prec", "temp"))
+
+  prec_one <- topocast(prec ~ elev + slope, data = data2, onto = grids$terrain, radius = 3)
+  temp_one <- topocast(temp ~ elev + slope, data = data2, onto = grids$terrain, radius = 3)
+  expect_equal(terra::values(multi[["prec"]]), terra::values(prec_one), tolerance = 1e-9)
+  expect_equal(terra::values(multi[["temp"]]), terra::values(temp_one), tolerance = 1e-9)
+})
+
+test_that("several responses prefix their coefficient grids by response name", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  temp <- 25 - 0.006 * grids$data[["elev"]]; names(temp) <- "temp"
+  out <- topocast(cbind(prec, temp) ~ elev, data = c(grids$data, temp),
+                  onto = grids$terrain, radius = 3, coefficients = TRUE)
+  expect_equal(names(out),
+               c("prec", "prec.(Intercept)", "prec.elev",
+                 "temp", "temp.(Intercept)", "temp.elev"))
+})
+
+test_that("diagnostics returns an r.squared layer within [0, 1]", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+                  radius = 3, diagnostics = TRUE)
+  expect_equal(names(out), c("prec", "r.squared"))
+  r2 <- terra::values(out[["r.squared"]])
+  r2 <- r2[is.finite(r2)]
+  expect_true(all(r2 >= 0 & r2 <= 1))
+})
+
+test_that("clamp bounds the output to the coarse response range", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  rng <- range(terra::values(grids$data[["prec"]]), na.rm = TRUE)
+  out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+                  radius = 3, clamp = TRUE)
+  v <- terra::values(out); v <- v[is.finite(v)]
+  expect_true(all(v >= rng[1] - 1e-9 & v <= rng[2] + 1e-9))
+})
+
+test_that("anomaly is rejected together with several responses", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  temp <- 25 - 0.006 * grids$data[["elev"]]; names(temp) <- "temp"
+  expect_error(
+    topocast(cbind(prec, temp) ~ elev, data = c(grids$data, temp), onto = grids$terrain,
+             radius = 3, anomaly = grids$data[["prec"]]),
+    "single-response")
+})
+
 test_that("a predictor in neither data nor onto is a clear error", {
   skip_if_not_installed("terra")
   grids <- make_grids()

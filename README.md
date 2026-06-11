@@ -1,85 +1,105 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file. -->
+
 # topocast
 
 <!-- badges: start -->
-[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+[![Lifecycle:
+experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 <!-- badges: end -->
 
 *coarse climate grids at the resolution of your terrain*
 
-**Downscale a coarse raster onto fine terrain by moving-window regression.**
+**Downscale a coarse raster onto fine terrain by moving-window
+regression.**
 
-Give `topocast` a coarse variable and a fine predictor it tracks. In a window
-around every cell it learns how the variable depends on the predictor, then
-evaluates that local relationship on the fine predictor. A 1 km precipitation
-grid and a 100 m elevation model become a 100 m precipitation field.
+<img src="man/figures/README-downscale-1.png" alt="A coarse blocky precipitation grid beside the same field downscaled onto fine terrain, sharing one colour scale." width="100%" />
 
-```r
+Give `topocast` a coarse variable and a fine predictor it tracks. In a
+window around every cell it learns how the variable depends on the
+predictor, then evaluates that local relationship on the fine predictor.
+A 1 km precipitation grid and a 100 m elevation model become a 100 m
+precipitation field.
+
+``` r
 library(topocast)
 library(terra)
 
 names(prec_1km) <- "prec"      # coarse variable, what you want at high resolution
 names(dem_100m) <- "elev"      # fine predictor it tracks
 
-fine <- topocast(prec ~ elev, data = prec_1km, onto = dem_100m, radius = 15)
+prec_100m <- topocast(prec ~ elev, data = prec_1km, onto = dem_100m, radius = 15)
 ```
 
-`fine` is precipitation on the elevation model's grid. Coarse to fine is one
-call: name the response and the predictor in a formula, pass the coarse grid as
-`data` and the fine grid as `onto`.
+`prec_100m` is precipitation on the elevation model’s grid. Coarse to
+fine is one call: name the response and the predictor in a formula, pass
+the coarse grid as `data` and the fine grid as `onto`.
 
 ## What goes in, what comes out
 
 - **`data`** is the coarse variable you want at higher resolution, as a
-  `SpatRaster`, `Raster*`, or `stars` grid. The layer on the left of the formula
-  is the response.
-- **`onto`** is the target: a fine grid holding the predictor(s) the variable
-  tracks, often a digital elevation model. It can also be a set of station or
-  plot points carrying those predictors as attributes.
-- **the result** is the response on the geometry of `onto`, in the class of
-  `onto`: a raster at the fine resolution for a grid target, a prediction column
-  for a point target.
+  `SpatRaster`, `Raster*`, or `stars` grid. The layer on the left of the
+  formula is the response.
+- **`onto`** is the target: a fine grid holding the predictor(s) the
+  variable tracks, often a digital elevation model. It can also be a set
+  of station or plot points carrying those predictors as attributes.
+- **the result** is the response on the geometry of `onto`, in the class
+  of `onto`: a raster at the fine resolution for a grid target, a
+  prediction column for a point target.
 
-When the only fine layer you have is the predictor itself, as in the example
-above, `topocast` derives the coarse predictor from `onto` for you, so a single
-coarse climate layer and a DEM are enough to start.
+When the only fine layer you have is the predictor itself, as in the
+example above, `topocast` derives the coarse predictor from `onto` for
+you, so a single coarse climate layer and a DEM are enough to start.
 
 ## How it works
 
-The relationship is fit locally, in a square window around every coarse cell,
-with summed-area tables: each window fit reduces to four lookups per sufficient
-statistic, so a radius of 30 costs the same as a radius of 3. The fitted
-intercept and slope grids are resampled to the fine grid and combined with the
-fine predictors as `fitted = intercept + sum(slope * predictor)`, so the output
-carries the fine-scale structure of the terrain with locally varying
-coefficients. This is the regression step behind high-resolution climate
-surfaces such as CHELSA (Karger et al. 2017); `topocast` runs it locally and
-takes any number of named predictors.
+The relationship is fit locally, in a square window around every coarse
+cell, with summed-area tables: each window fit reduces to four lookups
+per sufficient statistic, so a radius of 30 costs the same as a radius
+of 3. The fitted intercept and slope grids are resampled to the fine
+grid and combined with the fine predictors as
+`fitted = intercept + sum(slope * predictor)`, so the output carries the
+fine-scale structure of the terrain with locally varying coefficients.
+This is the regression step behind high-resolution climate surfaces such
+as CHELSA (Karger et al. 2017); `topocast` runs it locally and takes any
+number of named predictors.
 
-## What's in the box
+## What’s in the box
 
-- **One front door.** `topocast()` takes a formula, the coarse `data`, and the
-  fine `onto`, and returns the downscaled response.
-- **Any number of predictors.** `prec ~ elev + slope + twi` fits elevation,
-  slope, topographic wetness, or any aligned covariate jointly. The formula names
-  match layers between `data` and `onto`, so a missing layer is reported by name.
-- **Constant cost per window.** Summed-area tables keep each per-cell fit at four
-  lookups for any radius.
-- **Common spatial classes.** `SpatRaster`, `Raster*` (raster), and `stars` grids
-  are all accepted; the result comes back in the class of `onto`, or the class
-  named by `output`.
-- **Prediction at points.** Pass an `sf` or `SpatVector` of stations or plots as
-  `onto` and receive a prediction column, with the points carrying the fine
-  predictor values.
-- **Time series in one call.** Pass a stack of periods as `anomaly` to fit the
-  baseline once and carry each period onto it, `"ratio"` for precipitation or
-  `"additive"` for temperature.
-- **A matrix engine.** `window_regression()` exposes the kernel for callers who
-  hold their data as matrices.
+- **One front door.** `topocast()` takes a formula, the coarse `data`,
+  and the fine `onto`, and returns the downscaled response.
+- **Any number of predictors.** `prec ~ elev + slope + twi` fits
+  elevation, slope, topographic wetness, or any aligned covariate
+  jointly. The formula names match layers between `data` and `onto`, so
+  a missing layer is reported by name.
+- **Several responses in one call.** `cbind(prec, tmin) ~ elev`
+  downscales variables that share the terrain together. The window
+  design is built once and solved against each response, so a second
+  response costs little more than the first.
+- **Constant cost per window.** Summed-area tables keep each per-cell
+  fit at four lookups for any radius.
+- **Common spatial classes.** `SpatRaster`, `Raster*` (raster), and
+  `stars` grids are all accepted; the result comes back in the class of
+  `onto`, or the class named by `output`.
+- **Prediction at points.** Pass an `sf` or `SpatVector` of stations or
+  plots as `onto` and receive a prediction column, with the points
+  carrying the fine predictor values.
+- **Time series in one call.** Pass a stack of periods as `anomaly` to
+  fit the baseline once and carry each period onto it, `"ratio"` for
+  precipitation or `"additive"` for temperature.
+- **Fit quality on the map.** `diagnostics = TRUE` returns an
+  `r.squared` grid showing where the terrain relationship is strong, and
+  `clamp = TRUE` bounds the output to the observed range of the coarse
+  response.
+- **A matrix engine.** `window_regression()` exposes the kernel for
+  callers who hold their data as matrices.
 
 ## Installation
 
-```r
+``` r
 # install.packages("pak")
 pak::pak("gcol33/topocast")
 ```
@@ -88,60 +108,72 @@ pak::pak("gcol33/topocast")
 
 Several predictors, matched by name between the two grids:
 
-```r
+``` r
 coarse <- c(prec_1km, elev_1km, twi_1km, slope_1km)
 names(coarse) <- c("prec", "elev", "twi", "slope")
 terrain <- c(elev_100m, twi_100m, slope_100m)
 names(terrain) <- c("elev", "twi", "slope")
 
-fine <- topocast(prec ~ elev + twi + slope, data = coarse, onto = terrain,
-                 radius = 15)
+prec_100m <- topocast(prec ~ elev + twi + slope, data = coarse, onto = terrain,
+                      radius = 15)
+```
+
+Several responses that share the terrain, downscaled in one pass and
+returned as one layer each:
+
+``` r
+climate_100m <- topocast(cbind(prec, tmin, tmax) ~ elev, data = coarse,
+                         onto = terrain, radius = 15)
 ```
 
 A monthly series sharing one terrain relationship across periods:
 
-```r
+``` r
 series <- topocast(prec ~ elev, data = coarse, onto = terrain, radius = 15,
                    anomaly = prec_monthly_1km, type = "ratio")
 ```
 
-Downscaling straight to plot locations, returned as a column on the points:
+Downscaling straight to plot locations, returned as a column on the
+points:
 
-```r
+``` r
 at_plots <- topocast(prec ~ elev, data = coarse, onto = plots_sf, radius = 15)
 ```
 
 The local coefficient grids, to read the fitted lapse rate:
 
-```r
+``` r
 coefs <- topocast(prec ~ elev, data = coarse, onto = terrain, radius = 15,
                   coefficients = TRUE)
 ```
 
 ## Documentation
 
-- [Getting started](https://gillescolling.com/topocast/articles/getting-started.html)
-- [How moving-window downscaling works](https://gillescolling.com/topocast/articles/how-it-works.html)
+- [Getting
+  started](https://gillescolling.com/topocast/articles/getting-started.html)
+- [How moving-window downscaling
+  works](https://gillescolling.com/topocast/articles/how-it-works.html)
 - [Full reference](https://gillescolling.com/topocast/reference/)
 
 ## Support
 
-> "Software is like sex: it's better when it's free." — Linus Torvalds
+> “Software is like sex: it’s better when it’s free.” — Linus Torvalds
 
-I'm a PhD student who builds R packages in my free time because I believe good
-tools should be free and open. I started these projects for my own work and
-figured others might find them useful too.
+I’m a PhD student who builds R packages in my free time because I
+believe good tools should be free and open. I started these projects for
+my own work and figured others might find them useful too.
 
-If this package saved you some time, buying me a coffee is a nice way to say
-thanks. It helps with my coffee addiction.
+If this package saved you some time, buying me a coffee is a nice way to
+say thanks. It helps with my coffee addiction.
 
-[![Buy Me A Coffee](https://img.shields.io/badge/-Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/gcol33)
+[![Buy Me A
+Coffee](https://img.shields.io/badge/-Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/gcol33)
 
 ## License and citation
 
 MIT. If you use `topocast` in published work, please cite it:
 
-```bibtex
+``` bibtex
 @software{topocast,
   author = {Colling, Gilles},
   title  = {topocast: Moving-Window Regression Downscaling of Raster Data},

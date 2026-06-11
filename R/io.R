@@ -113,6 +113,34 @@ safe_ratio <- function(numerator, denominator) {
   ifelse(is.finite(ratio), ratio, NA_real_)
 }
 
+# Clamp a value to a numeric range, for SpatRaster or numeric. A non-finite range
+# (an all-NA response layer) is a no-op.
+clamp_values <- function(x, range, target) {
+  lo <- range[1L]; hi <- range[2L]
+  if (!is.finite(lo) || !is.finite(hi)) return(x)
+  if (target$kind == "grid") terra::clamp(x, lo, hi, values = TRUE)
+  else pmin(pmax(x, lo), hi)
+}
+
+# Clamp to the unit interval, for SpatRaster or numeric. Resampling the coarse
+# R-squared grid can carry it slightly outside [0, 1]; the fit value cannot.
+clamp_unit <- function(x) {
+  if (inherits(x, "SpatRaster")) return(terra::clamp(x, 0, 1, values = TRUE))
+  pmin(pmax(x, 0), 1)
+}
+
+# The observed range of a coarse response layer, the bounds the downscaled field is
+# clamped to when `clamp = TRUE`.
+response_range <- function(data, response) {
+  range(terra::values(data[[response]]), na.rm = TRUE)
+}
+
+# Prefix a named list of columns with `<response>.`, so several responses' coefficient
+# or diagnostic grids do not collide in the output.
+prefix_names <- function(cols, prefix) {
+  stats::setNames(cols, paste0(prefix, ".", names(cols)))
+}
+
 # Assemble the named result columns into the target's representation and return it
 # in the requested (or input-matching) class. `cols` are SpatRaster layers for a
 # grid target and numeric vectors for a point target.

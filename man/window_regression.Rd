@@ -7,7 +7,8 @@
 window_regression(y, x, radius, min_cells = 0L, min_variance = 1e-08)
 }
 \arguments{
-\item{y}{Numeric matrix, the response on the coarse grid.}
+\item{y}{Numeric matrix, the response on the coarse grid, or a list of numeric
+matrices for several responses sharing the predictors and grid.}
 
 \item{x}{Numeric matrix, or a list of numeric matrices, the predictor(s) on the
 same grid as \code{y}.}
@@ -22,18 +23,28 @@ the \code{k + 1} model terms (\code{k} predictors plus the intercept). Default \
 must have for the cell to be fit. Default \code{1e-8}.}
 }
 \value{
-A list with \code{intercept} (a numeric matrix) and \code{slope} (a list of
-numeric matrices, one per predictor), each the same size as \code{y}.
+A list with \code{intercept} (a numeric matrix), \code{slope} (a list of numeric
+matrices, one per predictor), and \code{r_squared} (a numeric matrix), each the
+same size as \code{y}. When \code{y} is a list of responses, \code{intercept} and \code{r_squared}
+are lists of matrices and \code{slope} is a list of per-response slope lists, named
+for the responses.
 }
 \description{
-Fits, for every cell, a linear regression of the response on one or more
-predictors over a square moving window, and returns full-resolution intercept
-and slope grids. The fit uses summed-area tables, so the cost does not grow
-with the window size. Cells are excluded from a window where the response or
-any predictor is non-finite; a cell is returned as \code{NA} when its window holds
-fewer valid cells than the model needs or a predictor has no spread.
+Fits, for every cell, a linear regression of one or more responses on a shared
+set of predictors over a square moving window, and returns full-resolution
+intercept and slope grids together with a per-cell coefficient of determination.
+The fit uses summed-area tables, so the cost does not grow with the window size.
+Cells are excluded from a window where any response or predictor is non-finite; a
+cell is returned as \code{NA} when its window holds fewer valid cells than the model
+needs or a predictor has no spread.
 }
 \details{
+Several responses share the predictors, so the window design is assembled and
+factored once and solved against every response, and each extra response costs
+only a back-substitution. The valid-cell mask is therefore complete-case across
+the responses: a cell enters a window only where every response and predictor is
+finite.
+
 This is the matrix engine behind \code{\link[=topocast]{topocast()}}; it works on plain numeric
 matrices and does not depend on terra.
 }
@@ -43,6 +54,12 @@ elevation <- matrix(runif(100, 0, 1000), 10, 10)
 climate <- 50 + 0.01 * elevation
 fit <- window_regression(climate, elevation, radius = 3)
 str(fit)
+
+# several responses sharing the predictor: the design is factored once
+rain <- 800 - 0.1 * elevation
+temp <- 15 - 0.006 * elevation
+both <- window_regression(list(rain = rain, temp = temp), elevation, radius = 3)
+names(both$slope)
 
 }
 \seealso{

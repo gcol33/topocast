@@ -11,11 +11,13 @@ topocast(
   radius,
   aggregate = "average",
   coefficients = FALSE,
+  diagnostics = FALSE,
   anomaly = NULL,
   baseline = NULL,
   type = c("ratio", "additive"),
   method = "cubicspline",
   output = NULL,
+  clamp = FALSE,
   min_cells = 0L,
   min_variance = 1e-08
 )
@@ -23,7 +25,8 @@ topocast(
 \arguments{
 \item{formula}{A two-sided formula of bare layer names, such as
 \code{prec ~ elev + slope}. The left-hand side names the coarse response layer in
-\code{data}; the right-hand side names the predictor layers.}
+\code{data}, or \code{cbind(prec, tmin)} for several responses sharing the predictors;
+the right-hand side names the predictor layers.}
 
 \item{data}{A gridded coarse input holding the response layer and, optionally,
 predictor layers named in \code{formula}: a \code{SpatRaster}, a \verb{Raster*} (raster), or
@@ -47,6 +50,11 @@ side \code{2 * radius + 1}.}
 \code{(Intercept)} and per-predictor slope grids on the \code{onto} grid. Not supported
 with \code{anomaly}. Default \code{FALSE}.}
 
+\item{diagnostics}{If \code{TRUE}, also return an \code{r.squared} grid (or column): the
+per-window coefficient of determination of the local fit, brought onto \code{onto}.
+It maps where the terrain relationship is strong and where the downscaled field
+rests mostly on the coarse input. Default \code{FALSE}.}
+
 \item{anomaly}{Optional multi-layer \code{SpatRaster} on the coarse grid; each layer
 is one period to downscale relative to \code{baseline}. When supplied, the result
 has one layer (or column) per period.}
@@ -65,14 +73,22 @@ Ignored when \code{anomaly} is \code{NULL}.}
 (grid targets) or \code{"terra"}, \code{"sf"}, \code{"spatvector"}, \code{"data.frame"} (point
 targets). Default \code{NULL} returns the result in the class of \code{onto}.}
 
+\item{clamp}{If \code{TRUE}, bound the downscaled field to the observed range of the
+coarse response, a guard against the local linear fit extrapolating without
+limit where a fine predictor lies outside the range it was fit on. Default
+\code{FALSE}.}
+
 \item{min_cells, min_variance}{Passed to \code{\link[=window_regression]{window_regression()}}.}
 }
 \value{
 The downscaled result on the geometry of \code{onto}, in the class of \code{onto}
 or the class named by \code{output}. For a grid target: a single layer named for
-the response; one layer per period when \code{anomaly} is supplied; or the fitted
-layer plus \code{(Intercept)} and slope grids when \code{coefficients = TRUE}. For a
-point target the same quantities are returned as prediction columns.
+the response; one layer per response with a \code{cbind()} left-hand side; one layer
+per period when \code{anomaly} is supplied; the fitted layer plus \code{(Intercept)} and
+slope grids when \code{coefficients = TRUE}; and an \code{r.squared} grid when
+\code{diagnostics = TRUE}. With several responses the coefficient and diagnostic
+grids are prefixed by the response name. For a point target the same quantities
+are returned as prediction columns.
 }
 \description{
 Fits a local linear regression of a coarse response on one or more coarse
@@ -96,6 +112,12 @@ digital elevation model, and no coarse predictor in hand. A predictor named in
 the formula but absent from \code{data} is then derived by aggregating its \code{onto}
 layer to the response grid with \code{aggregate}, so \code{topocast(prec ~ elev, data = prec_coarse, onto = dem_fine, radius = 15)} works directly from a coarse
 climate layer and a fine DEM.
+
+Several responses that share the predictors are downscaled together by naming
+them as \code{cbind(prec, tmin) ~ elev}. The moving-window design depends only on the
+predictors, so it is fit once and solved against every response; the result has
+one layer (or column) per response. With \code{coefficients} or \code{diagnostics}, the
+extra grids are prefixed by the response name.
 
 For a time series, supply \code{anomaly}: a stack of coarse periods. The baseline
 relationship is fit once and each period's coarse anomaly, relative to
@@ -132,6 +154,16 @@ fine2 <- topocast(prec ~ elev, data = data[["prec"]], onto = terrain, radius = 4
 # return the local coefficient grids
 coef_grids <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
                        coefficients = TRUE)
+
+# several responses sharing the predictor, downscaled in one call
+temperature <- 25 - 0.006 * elevation
+data2 <- c(precipitation, temperature, elevation)
+names(data2) <- c("prec", "temp", "elev")
+both <- topocast(cbind(prec, temp) ~ elev, data = data2, onto = terrain, radius = 4)
+
+# diagnostics: the local fit quality as an r.squared grid
+with_r2 <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
+                    diagnostics = TRUE)
 
 # time series: supply the periods
 months <- precipitation * c(0.8, 1.2)

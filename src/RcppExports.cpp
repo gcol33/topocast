@@ -12,17 +12,17 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // window_regression_cpp
-List window_regression_cpp(const arma::mat& y, const List& Xlist, int radius, int min_cells, double min_variance);
-RcppExport SEXP _topocast_window_regression_cpp(SEXP ySEXP, SEXP XlistSEXP, SEXP radiusSEXP, SEXP min_cellsSEXP, SEXP min_varianceSEXP) {
+List window_regression_cpp(const List& Ylist, const List& Xlist, int radius, int min_cells, double min_variance);
+RcppExport SEXP _topocast_window_regression_cpp(SEXP YlistSEXP, SEXP XlistSEXP, SEXP radiusSEXP, SEXP min_cellsSEXP, SEXP min_varianceSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::mat& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const List& >::type Ylist(YlistSEXP);
     Rcpp::traits::input_parameter< const List& >::type Xlist(XlistSEXP);
     Rcpp::traits::input_parameter< int >::type radius(radiusSEXP);
     Rcpp::traits::input_parameter< int >::type min_cells(min_cellsSEXP);
     Rcpp::traits::input_parameter< double >::type min_variance(min_varianceSEXP);
-    rcpp_result_gen = Rcpp::wrap(window_regression_cpp(y, Xlist, radius, min_cells, min_variance));
+    rcpp_result_gen = Rcpp::wrap(window_regression_cpp(Ylist, Xlist, radius, min_cells, min_variance));
     return rcpp_result_gen;
 END_RCPP
 }

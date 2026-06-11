@@ -136,6 +136,23 @@ predictor has within-window variance below `min_variance`, so its slope is not
 identified; or the assembled system is singular. These guards keep a flat or
 data-starved neighbourhood from producing a meaningless coefficient.
 
+## Reporting fit quality
+
+The same sufficient statistics give the local quality of each fit at no extra
+window cost. One more summed-area table, of the squared centred response, yields
+the within-window total sum of squares $\mathrm{SST} = \sum (y - \bar y_W)^2$,
+and the residual sum of squares follows from the fitted coefficients as
+$\mathrm{SSE} = y'y - \hat\beta' b$, where $b$ is the response side of the normal
+equations. Their ratio is the coefficient of determination,
+
+$$
+R^2(r,c) = 1 - \frac{\mathrm{SSE}}{\mathrm{SST}},
+$$
+
+returned by `diagnostics = TRUE` as an `r.squared` grid on the fine resolution. It
+maps where the terrain explains the response and where the downscaled field
+carries little more than the coarse level.
+
 ## Carrying a time series
 
 A climatology is one field. A time series shares the terrain relationship across
@@ -173,6 +190,9 @@ elevation reaches values the coarse window never saw, the regression extrapolate
 linearly. The fine output is only as trustworthy as a linear relationship over
 that extended range, which is a reason to keep predictors that stay roughly
 linear with the response and to inspect the result where the terrain is extreme.
+Setting `clamp = TRUE` bounds the downscaled field to the observed range of the
+coarse response, capping such extrapolation at the values the variable actually
+takes.
 
 ## Reference
 

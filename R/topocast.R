@@ -22,6 +22,12 @@
 #' prec_coarse, onto = dem_fine, radius = 15)` works directly from a coarse
 #' climate layer and a fine DEM.
 #'
+#' Several responses that share the predictors are downscaled together by naming
+#' them as `cbind(prec, tmin) ~ elev`. The moving-window design depends only on the
+#' predictors, so it is fit once and solved against every response; the result has
+#' one layer (or column) per response. With `coefficients` or `diagnostics`, the
+#' extra grids are prefixed by the response name.
+#'
 #' For a time series, supply `anomaly`: a stack of coarse periods. The baseline
 #' relationship is fit once and each period's coarse anomaly, relative to
 #' `baseline`, is carried onto the fine baseline. Use `type = "ratio"` for
@@ -38,7 +44,8 @@
 #'
 #' @param formula A two-sided formula of bare layer names, such as
 #'   `prec ~ elev + slope`. The left-hand side names the coarse response layer in
-#'   `data`; the right-hand side names the predictor layers.
+#'   `data`, or `cbind(prec, tmin)` for several responses sharing the predictors;
+#'   the right-hand side names the predictor layers.
 #' @param data A gridded coarse input holding the response layer and, optionally,
 #'   predictor layers named in `formula`: a `SpatRaster`, a `Raster*` (raster), or
 #'   a `stars` object. Any predictor not in `data` is derived from `onto`.
@@ -56,6 +63,10 @@
 #' @param coefficients If `TRUE`, return the fitted layer together with the
 #'   `(Intercept)` and per-predictor slope grids on the `onto` grid. Not supported
 #'   with `anomaly`. Default `FALSE`.
+#' @param diagnostics If `TRUE`, also return an `r.squared` grid (or column): the
+#'   per-window coefficient of determination of the local fit, brought onto `onto`.
+#'   It maps where the terrain relationship is strong and where the downscaled field
+#'   rests mostly on the coarse input. Default `FALSE`.
 #' @param anomaly Optional multi-layer `SpatRaster` on the coarse grid; each layer
 #'   is one period to downscale relative to `baseline`. When supplied, the result
 #'   has one layer (or column) per period.
@@ -69,13 +80,20 @@
 #' @param output Optional output class, one of `"terra"`, `"raster"`, `"stars"`
 #'   (grid targets) or `"terra"`, `"sf"`, `"spatvector"`, `"data.frame"` (point
 #'   targets). Default `NULL` returns the result in the class of `onto`.
+#' @param clamp If `TRUE`, bound the downscaled field to the observed range of the
+#'   coarse response, a guard against the local linear fit extrapolating without
+#'   limit where a fine predictor lies outside the range it was fit on. Default
+#'   `FALSE`.
 #' @param min_cells,min_variance Passed to [window_regression()].
 #'
 #' @return The downscaled result on the geometry of `onto`, in the class of `onto`
 #'   or the class named by `output`. For a grid target: a single layer named for
-#'   the response; one layer per period when `anomaly` is supplied; or the fitted
-#'   layer plus `(Intercept)` and slope grids when `coefficients = TRUE`. For a
-#'   point target the same quantities are returned as prediction columns.
+#'   the response; one layer per response with a `cbind()` left-hand side; one layer
+#'   per period when `anomaly` is supplied; the fitted layer plus `(Intercept)` and
+#'   slope grids when `coefficients = TRUE`; and an `r.squared` grid when
+#'   `diagnostics = TRUE`. With several responses the coefficient and diagnostic
+#'   grids are prefixed by the response name. For a point target the same quantities
+#'   are returned as prediction columns.
 #'
 #' @seealso [window_regression()] for the matrix engine.
 #'
@@ -101,6 +119,16 @@
 #' coef_grids <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
 #'                        coefficients = TRUE)
 #'
+#' # several responses sharing the predictor, downscaled in one call
+#' temperature <- 25 - 0.006 * elevation
+#' data2 <- c(precipitation, temperature, elevation)
+#' names(data2) <- c("prec", "temp", "elev")
+#' both <- topocast(cbind(prec, temp) ~ elev, data = data2, onto = terrain, radius = 4)
+#'
+#' # diagnostics: the local fit quality as an r.squared grid
+#' with_r2 <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
+#'                     diagnostics = TRUE)
+#'
 #' # time series: supply the periods
 #' months <- precipitation * c(0.8, 1.2)
 #' names(months) <- c("jan", "feb")
@@ -117,16 +145,21 @@
 #'
 #' @export
 topocast <- function(formula, data, onto, radius,
-                     aggregate = "average", coefficients = FALSE,
+                     aggregate = "average", coefficients = FALSE, diagnostics = FALSE,
                      anomaly = NULL, baseline = NULL, type = c("ratio", "additive"),
-                     method = "cubicspline", output = NULL,
+                     method = "cubicspline", output = NULL, clamp = FALSE,
                      min_cells = 0L, min_variance = 1e-8) {
   type <- match.arg(type)
+  parsed <- parse_topo_formula(formula)
+  multi  <- length(parsed$response) > 1L
+
   if (coefficients && !is.null(anomaly))
     stop("`coefficients = TRUE` is not supported with `anomaly`; the coefficients ",
          "describe the baseline fit. Request them in a call without `anomaly`.")
+  if (multi && !is.null(anomaly))
+    stop("`anomaly` downscaling is single-response: the period stack is taken ",
+         "relative to one baseline. Call topocast() once per response.")
 
-  parsed <- parse_topo_formula(formula)
   data   <- as_grid(data, "data")
   target <- as_target(onto)
   target <- harmonize_target_crs(data, target)
@@ -134,26 +167,43 @@ topocast <- function(formula, data, onto, radius,
   onto_grid <- if (target$kind == "grid") target$grid else NULL
   fit <- fit_windows(parsed, data, onto_grid, radius = radius, aggregate = aggregate,
                      min_cells = min_cells, min_variance = min_variance)
-  casted <- cast_onto(fit, target, method = method)
 
   if (is.null(anomaly)) {
-    cols <- stats::setNames(list(casted$fitted), parsed$response)
-    if (coefficients) cols <- c(cols, casted$coef_cols)
+    cols <- list()
+    for (rfit in fit$responses) {
+      resp   <- rfit$response
+      casted <- cast_onto(rfit, fit$predictors, target, method = method)
+      fitted <- casted$fitted
+      if (clamp) fitted <- clamp_values(fitted, response_range(data, resp), target)
+      cols[[resp]] <- fitted
+      if (coefficients)
+        cols <- c(cols, if (multi) prefix_names(casted$coef_cols, resp) else casted$coef_cols)
+      if (diagnostics)
+        cols[[if (multi) paste0(resp, ".r.squared") else "r.squared"]] <- casted$r_squared
+    }
     return(finalize(target, cols, output))
   }
 
   if (!inherits(anomaly, "SpatRaster"))
     stop("`anomaly` must be a SpatRaster")
-  if (is.null(baseline)) baseline <- data[[parsed$response]]
-  cols <- carry_anomalies(casted$fitted, anomaly, baseline, target,
+  rfit   <- fit$responses[[1L]]
+  resp   <- rfit$response
+  casted <- cast_onto(rfit, fit$predictors, target, method = method)
+  fine_baseline <- casted$fitted
+  if (clamp) fine_baseline <- clamp_values(fine_baseline, response_range(data, resp), target)
+  if (is.null(baseline)) baseline <- data[[resp]]
+  cols <- carry_anomalies(fine_baseline, anomaly, baseline, target,
                           type = type, method = method)
+  if (diagnostics) cols[["r.squared"]] <- casted$r_squared
   finalize(target, cols, output)
 }
 
 # --- internal: fit / cast / carry seam ------------------------------------
 
 # Parse a `response ~ pred1 + pred2` formula into bare layer names, rejecting
-# anything that is not a plain additive term.
+# anything that is not a plain additive term. The left-hand side is a single bare
+# name, or `cbind(r1, r2, ...)` of bare names for several responses sharing the
+# predictors.
 parse_topo_formula <- function(formula) {
   if (!inherits(formula, "formula"))
     stop("`formula` must be a formula such as `prec ~ elev + slope`")
@@ -171,9 +221,7 @@ parse_topo_formula <- function(formula) {
   if (attr(terms_obj, "intercept") != 1L)
     stop("the intercept is always fit and cannot be removed from `formula`")
 
-  response <- all.vars(formula[[2L]])
-  if (length(response) != 1L)
-    stop("the left-hand side of `formula` must be a single layer name")
+  response <- parse_response(formula[[2L]])
 
   predictors <- attr(terms_obj, "term.labels")
   if (length(predictors) < 1L)
@@ -188,6 +236,25 @@ parse_topo_formula <- function(formula) {
       paste(predictors[!valid], collapse = ", ")))
 
   list(response = response, predictors = predictors)
+}
+
+# Parse the left-hand side: a single bare name, or `cbind(r1, r2, ...)` of bare
+# names for several responses. Anything else (a transformation, a literal) is an
+# error, mirroring the right-hand-side rule.
+parse_response <- function(lhs) {
+  if (is.name(lhs)) return(as.character(lhs))
+  if (is.call(lhs) && identical(lhs[[1L]], as.name("cbind"))) {
+    args <- as.list(lhs)[-1L]
+    if (length(args) < 1L)
+      stop("`cbind()` on the left-hand side must name at least one response layer")
+    if (!all(vapply(args, is.name, logical(1))))
+      stop(paste0("the left-hand side may only use bare layer names; use ",
+                  "`cbind(r1, r2)` of bare names for several responses, such as ",
+                  "`cbind(prec, tmin) ~ elev`."))
+    return(vapply(args, as.character, character(1)))
+  }
+  stop(paste0("the left-hand side of `formula` must be a single bare layer name, ",
+              "or `cbind(...)` of bare layer names for several responses."))
 }
 
 # Treat two coordinate reference systems that share an EPSG code as equal even
@@ -263,48 +330,60 @@ resolve_predictors <- function(predictors, data, onto_grid, response_template, a
   terra::rast(layers)
 }
 
-# Fit the coarse coefficient grids. Returns the coefficients as a multi-layer
-# SpatRaster (intercept plus one slope per predictor) on the coarse grid.
+# Fit the coarse coefficient grids. The predictors are shared across responses, so
+# one engine call returns the intercept, slopes, and per-cell R-squared for every
+# response. Returns the shared predictor names and a per-response fit, each holding
+# the coefficient SpatRaster (intercept plus one slope per predictor) and the
+# R-squared grid on the coarse grid.
 fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, min_variance) {
-  response_raster <- select_layers(data, parsed$response, "data")
+  response_raster  <- select_layers(data, parsed$response, "data")
+  template         <- response_raster[[1L]]
   predictor_raster <- resolve_predictors(parsed$predictors, data, onto_grid,
-                                         response_raster, aggregate)
+                                         template, aggregate)
 
-  response_matrix <- raster_to_matrix(response_raster)
+  response_matrices <- stats::setNames(
+    lapply(seq_len(terra::nlyr(response_raster)),
+           function(i) raster_to_matrix(response_raster[[i]])),
+    parsed$response)
   predictor_matrices <- lapply(seq_len(terra::nlyr(predictor_raster)),
                                function(i) raster_to_matrix(predictor_raster[[i]]))
-  regression <- window_regression(response_matrix, predictor_matrices,
+  regression <- window_regression(response_matrices, predictor_matrices,
                                   radius = radius, min_cells = min_cells,
                                   min_variance = min_variance)
 
-  coefficients <- terra::rast(c(
-    list(matrix_to_raster(regression$intercept, response_raster)),
-    lapply(regression$slope, matrix_to_raster, template = response_raster)))
-  names(coefficients) <- c("(Intercept)", parsed$predictors)
-  list(coefficients = coefficients,
-       response = parsed$response,
-       predictors = parsed$predictors)
+  responses <- lapply(parsed$response, function(resp) {
+    coefficients <- terra::rast(c(
+      list(matrix_to_raster(regression$intercept[[resp]], template)),
+      lapply(regression$slope[[resp]], matrix_to_raster, template = template)))
+    names(coefficients) <- c("(Intercept)", parsed$predictors)
+    r_squared <- matrix_to_raster(regression$r_squared[[resp]], template)
+    names(r_squared) <- "r.squared"
+    list(response = resp, coefficients = coefficients, r_squared = r_squared)
+  })
+  list(predictors = parsed$predictors, responses = responses)
 }
 
-# Evaluate the fitted relationship on the target. The coarse coefficient grids are
-# brought onto the target (resampled to the fine grid, or interpolated at point
-# geometries) and combined with the target predictors as
-# fitted = intercept + sum_j slope_j * predictor_j. Returns the fitted values and
-# the per-coefficient grids/columns in the target's representation.
-cast_onto <- function(fit, target, method) {
-  coef  <- bring_onto_target(fit$coefficients, target, method)
-  preds <- target_predictors(target, fit$predictors)
+# Evaluate one response's fitted relationship on the target. The coarse coefficient
+# grids and the R-squared grid are brought onto the target together (resampled to the
+# fine grid, or interpolated at point geometries) and combined with the target
+# predictors as fitted = intercept + sum_j slope_j * predictor_j. Returns the fitted
+# values, the per-coefficient grids/columns, and the R-squared, in the target's
+# representation.
+cast_onto <- function(rfit, predictors, target, method) {
+  bundle <- bring_onto_target(c(rfit$coefficients, rfit$r_squared), target, method)
+  preds  <- target_predictors(target, predictors)
 
-  intercept <- coef[["(Intercept)"]]
-  slopes <- stats::setNames(lapply(fit$predictors, function(p) coef[[p]]), fit$predictors)
-  predictor_values <- stats::setNames(lapply(fit$predictors, function(p) preds[[p]]),
-                                       fit$predictors)
+  intercept <- bundle[["(Intercept)"]]
+  slopes <- stats::setNames(lapply(predictors, function(p) bundle[[p]]), predictors)
+  predictor_values <- stats::setNames(lapply(predictors, function(p) preds[[p]]),
+                                       predictors)
   fitted <- eval_fitted(intercept, slopes, predictor_values)
 
   coef_cols <- stats::setNames(
-    c(list(coef[["(Intercept)"]]), lapply(fit$predictors, function(p) coef[[p]])),
-    c("(Intercept)", fit$predictors))
-  list(fitted = fitted, coef_cols = coef_cols)
+    c(list(intercept), lapply(predictors, function(p) slopes[[p]])),
+    c("(Intercept)", predictors))
+  list(fitted = fitted, coef_cols = coef_cols,
+       r_squared = clamp_unit(bundle[["r.squared"]]))
 }
 
 # Carry each coarse period's anomaly, relative to a coarse baseline, onto the fine
