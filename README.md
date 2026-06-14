@@ -22,7 +22,7 @@ Give `topocast` a coarse variable and a fine predictor it tracks. In a
 window around every cell it learns how the variable depends on the
 predictor, then evaluates that local relationship on the fine predictor.
 A 1 km precipitation grid and a 100 m elevation model become a 100 m
-precipitation field.
+precipitation grid.
 
 ``` r
 library(topocast)
