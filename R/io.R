@@ -73,8 +73,18 @@ harmonize_target_crs <- function(data, target) {
 # whose columns are the coarse layers (points); both are indexed by layer name.
 bring_onto_target <- function(coarse, target, method) {
   if (target$kind == "grid")
-    return(terra::resample(coarse, target$grid[[1]], method = method))
+    return(resample_named(coarse, target$grid[[1]], method, "method"))
   terra::extract(coarse, target$vect, method = method, ID = FALSE)
+}
+
+# terra::resample(), wrapped so an invalid `method` fails with a message naming
+# the offending topocast() argument (`aggregate` or the grid-target `method`),
+# rather than terra's own match.arg()-style error, which names neither.
+resample_named <- function(x, y, method, argument) {
+  tryCatch(
+    terra::resample(x, y, method = method),
+    error = function(e) stop(sprintf("`%s = \"%s\"` is not a resampling method terra::resample() accepts: %s",
+                                     argument, method, conditionMessage(e)), call. = FALSE))
 }
 
 # Resolve `method` against the target kind. `NULL` takes a kind-appropriate
@@ -126,10 +136,18 @@ eval_fitted <- function(intercept, slopes, predictors) {
   fitted
 }
 
-# A ratio with a zero or missing denominator set to NA, for SpatRaster or numeric.
+# A ratio with a zero or missing denominator set to NA, for SpatRaster or numeric,
+# except where the numerator is *also* zero: a coarse cell with no signal in either
+# the baseline or the anomaly period (e.g. a dry-season precipitation cell that is
+# genuinely zero in both) is treated as ratio 1, "no change", rather than losing
+# the fine baseline entirely the same way a true x/0 does.
 safe_ratio <- function(numerator, denominator) {
   ratio <- numerator / denominator
-  if (inherits(ratio, "SpatRaster")) return(terra::ifel(is.finite(ratio), ratio, NA))
+  if (inherits(ratio, "SpatRaster")) {
+    ratio <- terra::ifel(numerator == 0 & denominator == 0, 1, ratio)
+    return(terra::ifel(is.finite(ratio), ratio, NA))
+  }
+  ratio <- ifelse(numerator == 0 & denominator == 0, 1, ratio)
   ifelse(is.finite(ratio), ratio, NA_real_)
 }
 
@@ -154,6 +172,15 @@ clamp_unit <- function(x) {
 clamp_nonneg <- function(x) {
   if (inherits(x, "SpatRaster")) return(terra::clamp(x, lower = 0, values = TRUE))
   pmax(x, 0)
+}
+
+# Clamp to [0, max_value], for SpatRaster or numeric. Resampling the coarse
+# valid-cell-count grid can carry it outside the range any window could actually
+# hold; unlike residual SD, n.valid also has a real, computable ceiling (the
+# window's cell count), not just a floor at zero.
+clamp_count <- function(x, max_value) {
+  if (inherits(x, "SpatRaster")) return(terra::clamp(x, lower = 0, upper = max_value, values = TRUE))
+  pmin(pmax(x, 0), max_value)
 }
 
 # The observed range of a coarse response layer, the bounds the downscaled field is
@@ -201,6 +228,13 @@ resolve_output_class <- function(target, output) {
 as_grid_class <- function(x, class_out) {
   switch(class_out,
     terra  = x,
+    # raster::raster()/brick() run layer names through validNames()
+    # (make.names()-based) unconditionally, in both the constructor and every
+    # names<-()/names() call afterward; there is no way to make a `raster`
+    # object's names() report "(Intercept)" verbatim, so a `raster` output's
+    # coefficient columns come back as e.g. "X.Intercept." instead. This is a
+    # limitation of the raster package's own accessor, documented on
+    # topocast()'s `output` argument rather than worked around here.
     raster = {
       require_pkg("raster", "Raster* output")
       if (terra::nlyr(x) == 1L) raster::raster(x) else raster::brick(x)

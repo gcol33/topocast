@@ -3,6 +3,6 @@ bibentry(
   title    = "topocast: Moving-Window Regression Downscaling of Raster Data",
   author   = person("Gilles", "Colling"),
   year     = "2026",
-  note     = "R package version 0.0.1",
+  note     = sprintf("R package version %s", meta$Version),
   url      = "https://github.com/gcol33/topocast"
 )

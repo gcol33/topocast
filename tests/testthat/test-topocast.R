@@ -294,3 +294,153 @@ test_that("the ratio path guards a zero baseline", {
                   radius = 3, anomaly = period, baseline = zero_baseline, type = "ratio")
   expect_true(all(is.na(terra::values(out))))
 })
+
+test_that("a zero baseline with a zero period is treated as no change, not NA (issue #27)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  baseline_out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain, radius = 3)
+  zero_baseline <- terra::setValues(grids$data[["prec"]], 0)
+  zero_period   <- terra::setValues(grids$data[["prec"]], 0)
+  out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+                  radius = 3, anomaly = zero_period, baseline = zero_baseline, type = "ratio")
+  expect_equal(terra::values(out), terra::values(baseline_out), tolerance = 1e-9)
+})
+
+test_that("a response or predictor name reserved for topocast()'s own output is rejected (issue #22)", {
+  expect_error(topocast:::parse_topo_formula(`r.squared` ~ elev), "reserves")
+  expect_error(topocast:::parse_topo_formula(`residual.sd` ~ elev), "reserves")
+  expect_error(topocast:::parse_topo_formula(`n.valid` ~ elev), "reserves")
+  expect_error(topocast:::parse_topo_formula(`(Intercept)` ~ elev), "reserves")
+  expect_error(topocast:::parse_topo_formula(prec ~ r.squared), "reserves")
+  expect_error(topocast:::parse_topo_formula(prec ~ n.valid), "reserves")
+})
+
+test_that("topocast() rejects a response named like a diagnostic column instead of silently overwriting it (issue #22)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  renamed <- grids$data
+  names(renamed)[names(renamed) == "prec"] <- "r.squared"
+  expect_error(
+    topocast(`r.squared` ~ elev + slope, data = renamed, onto = grids$terrain,
+             radius = 3, diagnostics = TRUE),
+    "reserves")
+})
+
+test_that("every output class but raster preserves the (Intercept) coefficient column name (issue #23)", {
+  skip_if_not_installed("terra")
+  skip_if_not_installed("raster")
+  skip_if_not_installed("stars")
+  grids <- make_grids()
+  args <- list(formula = prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+              radius = 3, coefficients = TRUE)
+  expect_true("(Intercept)" %in% names(do.call(topocast, c(args, list(output = "terra")))))
+
+  # stars stores a multi-layer raster as one 3D array with a "band" dimension,
+  # not several named attributes; the per-layer names live in that dimension's
+  # values rather than in names(), which instead reports the (single, and here
+  # misleadingly first-layer-named) attribute.
+  out_stars <- do.call(topocast, c(args, list(output = "stars")))
+  expect_true("(Intercept)" %in% stars::st_get_dimension_values(out_stars, "band"))
+
+  # raster::names() runs every name through make.names() unconditionally, in
+  # both its setter and its getter; there is no way for a `raster` object to
+  # report "(Intercept)" verbatim, so this output class alone gets the
+  # make.names()-mangled name instead, as documented on `?topocast`.
+  out_raster <- do.call(topocast, c(args, list(output = "raster")))
+  expect_true("X.Intercept." %in% names(out_raster))
+})
+
+test_that("n.valid is bounded to [0, window cell count] after resampling (issue #24)", {
+  expect_equal(topocast:::clamp_count(c(-5, 3, 100), 49), c(0, 3, 49))
+  skip_if_not_installed("terra")
+  r <- terra::rast(nrows = 2, ncols = 2, vals = c(-5, 3, 60, 49))
+  out <- topocast:::clamp_count(r, 49)
+  expect_equal(as.numeric(terra::values(out)), c(0, 3, 49, 49))
+})
+
+test_that("radius = 0 is rejected rather than silently returning an all-NA result (issue #25)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  expect_error(
+    topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain, radius = 0),
+    "at least 1")
+})
+
+test_that("an invalid aggregate or grid-target method names the topocast argument (issue #26)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  response_only <- grids$data[["prec"]]
+  expect_error(
+    topocast(prec ~ elev + slope, data = response_only, onto = grids$terrain, radius = 3,
+             aggregate = "bogus_method"),
+    "`aggregate")
+  expect_error(
+    topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain, radius = 3,
+             method = "bogus_method"),
+    "`method")
+})
+
+test_that("a CRS mismatch with no EPSG code on either side still shows something to compare (issue #28)", {
+  skip_if_not_installed("terra")
+  base  <- terra::rast(nrows = 4, ncols = 4,
+    crs = "+proj=tmerc +lat_0=0 +lon_0=9 +k=0.9996 +x_0=500000 +datum=WGS84 +units=m +no_defs")
+  other <- terra::rast(nrows = 4, ncols = 4,
+    crs = "+proj=tmerc +lat_0=0 +lon_0=12 +k=0.9996 +x_0=500000 +datum=WGS84 +units=m +no_defs")
+  expect_error(topocast:::harmonize_crs(base, other), "tmerc")
+})
+
+test_that("aggregate uses the requested resample method to derive a coarse predictor (issue #30)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  response_only <- grids$data[["prec"]]
+  out_avg  <- topocast(prec ~ elev + slope, data = response_only, onto = grids$terrain,
+                       radius = 3, aggregate = "average")
+  out_near <- topocast(prec ~ elev + slope, data = response_only, onto = grids$terrain,
+                       radius = 3, aggregate = "near")
+  expect_false(isTRUE(all.equal(terra::values(out_avg), terra::values(out_near))))
+})
+
+test_that("cbind() downscales three or more responses correctly (issue #30)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  temp <- 25 - 0.006 * grids$data[["elev"]]; names(temp) <- "temp"
+  wind <- 5 + 0.001 * grids$data[["elev"]]; names(wind) <- "wind"
+  data3 <- c(grids$data, temp, wind)
+
+  multi <- topocast(cbind(prec, temp, wind) ~ elev + slope, data = data3,
+                    onto = grids$terrain, radius = 3)
+  expect_equal(names(multi), c("prec", "temp", "wind"))
+
+  wind_one <- topocast(wind ~ elev + slope, data = data3, onto = grids$terrain, radius = 3)
+  expect_equal(terra::values(multi[["wind"]]), terra::values(wind_one), tolerance = 1e-9)
+})
+
+test_that("topocast() surfaces a clear error for an entirely non-finite response (issue #30/#34)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  all_na_prec <- terra::setValues(grids$data[["prec"]], NA_real_)
+  names(all_na_prec) <- "prec"
+  all_na_data <- c(all_na_prec, grids$data[["elev"]], grids$data[["slope"]])
+  expect_error(
+    topocast(prec ~ elev + slope, data = all_na_data, onto = grids$terrain, radius = 3),
+    "nothing to fit")
+})
+
+test_that("a predictor present in both data and onto is fit from data's coarse layer (issue #30)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  perturbed_terrain <- grids$terrain
+  perturbed_terrain[["elev"]] <- perturbed_terrain[["elev"]] + 5000
+
+  coef_normal    <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+                             radius = 3, coefficients = TRUE)
+  coef_perturbed <- topocast(prec ~ elev + slope, data = grids$data, onto = perturbed_terrain,
+                             radius = 3, coefficients = TRUE)
+  # the coarse fit (the coefficient grids) is unaffected by onto's elev values,
+  # since a predictor already present in `data` is always fit from data's coarse
+  # layer; only the final evaluation (not compared here) uses onto's elev.
+  expect_equal(terra::values(coef_normal[["elev"]]), terra::values(coef_perturbed[["elev"]]),
+               tolerance = 1e-9)
+  expect_equal(terra::values(coef_normal[["(Intercept)"]]), terra::values(coef_perturbed[["(Intercept)"]]),
+               tolerance = 1e-9)
+})

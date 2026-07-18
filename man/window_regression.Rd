@@ -13,8 +13,9 @@ matrices for several responses sharing the predictors and grid.}
 \item{x}{Numeric matrix, or a list of numeric matrices, the predictor(s) on the
 same grid as \code{y}.}
 
-\item{radius}{Integer window radius in cells; the window is a square of side
-\code{2 * radius + 1}.}
+\item{radius}{Integer window radius in cells, at least \code{1}; the window is a
+square of side \code{2 * radius + 1}. A radius of \code{0} is rejected: its one-cell
+window can never hold the \code{k + 1} valid cells a fit needs.}
 
 \item{min_cells}{Integer, additional valid cells required in a window beyond
 the \code{k + 1} model terms (\code{k} predictors plus the intercept). Default \code{0}.}
@@ -40,7 +41,9 @@ intercept and slope grids together with a per-cell coefficient of determination.
 The fit uses summed-area tables, so the cost does not grow with the window size.
 Cells are excluded from a window where any response or predictor is non-finite; a
 cell is returned as \code{NA} when its window holds fewer valid cells than the model
-needs or a predictor has no spread.
+needs or a predictor has no spread. If every cell of every response and predictor
+is non-finite, there is nothing to regress and the call errors instead of
+returning an all-\code{NA} result.
 }
 \details{
 Several responses share the predictors, so the window design is assembled and

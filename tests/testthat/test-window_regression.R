@@ -284,3 +284,51 @@ test_that("a rank-deficient multi-predictor window returns NA rather than an uns
   expect_true(all(is.na(fit$slope[[1]])))
   expect_true(all(is.na(fit$slope[[2]])))
 })
+
+test_that("a flat window on a large grid still returns NA (issue #21)", {
+  # A summed-area-table entry near the far side of a large grid holds a sum over
+  # most of the grid's cells, so its magnitude grows with the grid size; a plain
+  # double-precision table loses precision proportional to that magnitude, not to
+  # the window's own size, and can turn a genuinely zero within-window variance
+  # into a small positive number that wrongly clears min_variance. 1200x1200 cells
+  # (1.44e6) is comfortably past the point (~1e6) where this was observed to
+  # misfire; real DEM tiles (SRTM 1-arcsec: 3601x3601) are larger still.
+  set.seed(30)
+  n <- 1200
+  elevation <- matrix(runif(n * n, 0, 8000), n, n)
+  elevation[(n - 6):(n - 2), (n - 6):(n - 2)] <- 4000  # exactly flat 5x5 block
+  climate <- matrix(rnorm(n * n, 10, 2), n, n)
+
+  fit <- window_regression(climate, elevation, radius = 2)
+  center <- n - 4
+  expect_true(is.na(fit$intercept[center, center]))
+  expect_true(is.na(fit$slope[[1]][center, center]))
+})
+
+test_that("radius = 0 is rejected rather than silently returning an all-NA result (issue #25)", {
+  set.seed(31)
+  elevation <- matrix(runif(100, 0, 2000), 10, 10)
+  climate <- 30 - 0.006 * elevation
+  expect_error(window_regression(climate, elevation, radius = 0), "at least 1")
+})
+
+test_that("an entirely non-finite y/x errors clearly instead of returning all-NA (issue #30/#34)", {
+  y <- matrix(NA_real_, 5, 5)
+  x <- matrix(NA_real_, 5, 5)
+  expect_error(window_regression(y, x, radius = 2), "nothing to regress")
+})
+
+test_that("the engine matches the brute-force oracle with three predictors (issue #30)", {
+  set.seed(32)
+  x1 <- matrix(runif(120, 0, 2000), 10, 12)
+  x2 <- matrix(runif(120, 0, 50), 10, 12)
+  x3 <- matrix(runif(120, 0, 10), 10, 12)
+  y <- 5 - 0.004 * x1 + 0.2 * x2 + 0.5 * x3 + matrix(rnorm(120, 0, 0.3), 10, 12)
+
+  fit <- window_regression(y, list(x1, x2, x3), radius = 4)
+  ref <- window_regression_ref(y, list(x1, x2, x3), radius = 4)
+  expect_equal(fit$intercept, ref$intercept, tolerance = 1e-5)
+  expect_equal(fit$slope[[1]], ref$slope[[1]], tolerance = 1e-5)
+  expect_equal(fit$slope[[2]], ref$slope[[2]], tolerance = 1e-5)
+  expect_equal(fit$slope[[3]], ref$slope[[3]], tolerance = 1e-5)
+})

@@ -6,7 +6,9 @@
 #' The fit uses summed-area tables, so the cost does not grow with the window size.
 #' Cells are excluded from a window where any response or predictor is non-finite; a
 #' cell is returned as `NA` when its window holds fewer valid cells than the model
-#' needs or a predictor has no spread.
+#' needs or a predictor has no spread. If every cell of every response and predictor
+#' is non-finite, there is nothing to regress and the call errors instead of
+#' returning an all-`NA` result.
 #'
 #' Several responses share the predictors, so the window design is assembled and
 #' factored once and solved against every response, and each extra response costs
@@ -21,8 +23,9 @@
 #'   matrices for several responses sharing the predictors and grid.
 #' @param x Numeric matrix, or a list of numeric matrices, the predictor(s) on the
 #'   same grid as `y`.
-#' @param radius Integer window radius in cells; the window is a square of side
-#'   `2 * radius + 1`.
+#' @param radius Integer window radius in cells, at least `1`; the window is a
+#'   square of side `2 * radius + 1`. A radius of `0` is rejected: its one-cell
+#'   window can never hold the `k + 1` valid cells a fit needs.
 #' @param min_cells Integer, additional valid cells required in a window beyond
 #'   the `k + 1` model terms (`k` predictors plus the intercept). Default `0`.
 #' @param min_variance Numeric, the minimum within-window variance a predictor
@@ -89,6 +92,16 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
   min_cells    <- check_count(min_cells, "min_cells")
   min_variance <- check_nonneg(min_variance, "min_variance")
 
+  # A radius of 0 gives a window of exactly one cell, which can never hold the
+  # k + 1 valid cells a fit with k predictors needs (k >= 1 is already required
+  # above), so every cell of the result would silently be NA. Reject it rather
+  # than let that happen with no error or warning.
+  if (radius < 1L)
+    stop(sprintf(paste0(
+      "`radius` must be at least 1; a radius of 0 gives a window of a single cell, ",
+      "which can never hold the %d valid cells needed to fit an intercept plus ",
+      "%d predictor(s)."), length(x) + 1L, length(x)))
+
   # A radius at or beyond the grid dimensions already covers every cell in
   # every window; clamping here keeps `row + radius` from overflowing a signed
   # 32-bit int in the C++ engine for a radius near .Machine$integer.max, without
@@ -96,7 +109,16 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
   grid_span <- max(nrow(y_list[[1L]]), ncol(y_list[[1L]]))
   radius <- min(radius, grid_span)
 
-  res <- window_regression_cpp(y_list, x, radius, min_cells, min_variance)
+  res <- tryCatch(
+    window_regression_cpp(y_list, x, radius, min_cells, min_variance),
+    error = function(e) {
+      # Translate the C++ engine's generic message into one that names the
+      # actual R arguments, rather than letting the raw C++ text through.
+      if (grepl("no finite cells to regress", conditionMessage(e), fixed = TRUE))
+        stop("`y` and `x` share no cell where every response and every predictor ",
+             "is finite; there is nothing to regress.", call. = FALSE)
+      stop(e)
+    })
 
   if (single)
     return(list(intercept   = res$intercept[[1L]],

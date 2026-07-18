@@ -39,8 +39,9 @@ attributes, in which case the fit is evaluated at the points. With a point
 \code{onto} every predictor must be a layer of \code{data} (the derive-from-\code{onto}
 shortcut needs a grid).}
 
-\item{radius}{Integer window radius in coarse cells; the window is a square of
-side \code{2 * radius + 1}.}
+\item{radius}{Integer window radius in coarse cells, at least \code{1}; the window
+is a square of side \code{2 * radius + 1}. A radius of \code{0} is rejected: its
+one-cell window can never hold the valid cells a fit needs.}
 
 \item{aggregate}{Resampling method used to derive a coarse predictor from
 \code{onto} when it is not already a layer of \code{data}, passed to
@@ -48,7 +49,10 @@ side \code{2 * radius + 1}.}
 
 \item{coefficients}{If \code{TRUE}, return the fitted layer together with the
 \code{(Intercept)} and per-predictor slope grids on the \code{onto} grid. Not supported
-with \code{anomaly}. Default \code{FALSE}.}
+with \code{anomaly}. Default \code{FALSE}. With \code{output = "raster"}, the \code{raster}
+package's own \code{names()} accessor rewrites \code{"(Intercept)"} to \code{"X.Intercept."}
+(via \code{make.names()}, unconditionally, on every read); every other output
+class keeps the name verbatim.}
 
 \item{diagnostics}{If \code{TRUE}, also return three grids (or columns) describing the
 local fit, each brought onto \code{onto}: \code{r.squared}, the per-window coefficient of
@@ -72,7 +76,7 @@ taken relative to. Defaults to the response layer of \code{data}. Ignored when
 \code{anomaly} is \code{NULL}.}
 
 \item{type}{\code{"ratio"} (multiplicative) or \code{"additive"}; used only with
-\code{anomaly}.}
+\code{anomaly}. Default \code{"ratio"}.}
 
 \item{method}{Interpolation method for bringing the coefficient grids onto
 \code{onto}. For a grid \code{onto}, passed to \code{\link[terra:resample]{terra::resample()}}; default
@@ -138,7 +142,10 @@ For a time series, supply \code{anomaly}: a stack of coarse periods. The baselin
 relationship is fit once and each period's coarse anomaly, relative to
 \code{baseline}, is carried onto the fine baseline. Use \code{type = "ratio"} for
 non-negative variables such as precipitation and \code{type = "additive"} for
-variables such as temperature.
+variables such as temperature. With \code{type = "ratio"}, a coarse cell where the
+baseline is zero and the period is a genuine \code{x / 0} (undefined) is \code{NA}; where
+both the baseline and the period are zero, the ratio is taken as \code{1} (no
+change) rather than \code{NA}.
 
 \code{data} and \code{onto} may be any of the common spatial classes. A gridded input is
 accepted as a \code{SpatRaster}, a \verb{Raster*} object (raster), or a \code{stars} object.

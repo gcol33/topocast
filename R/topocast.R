@@ -32,7 +32,10 @@
 #' relationship is fit once and each period's coarse anomaly, relative to
 #' `baseline`, is carried onto the fine baseline. Use `type = "ratio"` for
 #' non-negative variables such as precipitation and `type = "additive"` for
-#' variables such as temperature.
+#' variables such as temperature. With `type = "ratio"`, a coarse cell where the
+#' baseline is zero and the period is a genuine `x / 0` (undefined) is `NA`; where
+#' both the baseline and the period are zero, the ratio is taken as `1` (no
+#' change) rather than `NA`.
 #'
 #' `data` and `onto` may be any of the common spatial classes. A gridded input is
 #' accepted as a `SpatRaster`, a `Raster*` object (raster), or a `stars` object.
@@ -55,14 +58,18 @@
 #'   attributes, in which case the fit is evaluated at the points. With a point
 #'   `onto` every predictor must be a layer of `data` (the derive-from-`onto`
 #'   shortcut needs a grid).
-#' @param radius Integer window radius in coarse cells; the window is a square of
-#'   side `2 * radius + 1`.
+#' @param radius Integer window radius in coarse cells, at least `1`; the window
+#'   is a square of side `2 * radius + 1`. A radius of `0` is rejected: its
+#'   one-cell window can never hold the valid cells a fit needs.
 #' @param aggregate Resampling method used to derive a coarse predictor from
 #'   `onto` when it is not already a layer of `data`, passed to
 #'   [terra::resample()]. Default `"average"`.
 #' @param coefficients If `TRUE`, return the fitted layer together with the
 #'   `(Intercept)` and per-predictor slope grids on the `onto` grid. Not supported
-#'   with `anomaly`. Default `FALSE`.
+#'   with `anomaly`. Default `FALSE`. With `output = "raster"`, the `raster`
+#'   package's own `names()` accessor rewrites `"(Intercept)"` to `"X.Intercept."`
+#'   (via `make.names()`, unconditionally, on every read); every other output
+#'   class keeps the name verbatim.
 #' @param diagnostics If `TRUE`, also return three grids (or columns) describing the
 #'   local fit, each brought onto `onto`: `r.squared`, the per-window coefficient of
 #'   determination, mapping where the terrain relationship is strong and where the
@@ -82,7 +89,7 @@
 #'   taken relative to. Defaults to the response layer of `data`. Ignored when
 #'   `anomaly` is `NULL`.
 #' @param type `"ratio"` (multiplicative) or `"additive"`; used only with
-#'   `anomaly`.
+#'   `anomaly`. Default `"ratio"`.
 #' @param method Interpolation method for bringing the coefficient grids onto
 #'   `onto`. For a grid `onto`, passed to [terra::resample()]; default
 #'   `"cubicspline"`. For a point (sf/SpatVector) `onto`, passed to
@@ -199,7 +206,7 @@ topocast <- function(formula, data, onto, radius,
         cols[[if (multi) paste0(resp, ".residual.sd") else "residual.sd"]] <- casted$residual_sd
       }
     }
-    if (diagnostics) cols[["n.valid"]] <- cast_n_valid(fit$n_valid, target, method)
+    if (diagnostics) cols[["n.valid"]] <- cast_n_valid(fit$n_valid, target, method, radius)
     return(finalize(target, cols, output))
   }
 
@@ -215,12 +222,31 @@ topocast <- function(formula, data, onto, radius,
   if (diagnostics) {
     cols[["r.squared"]]   <- casted$r_squared
     cols[["residual.sd"]] <- casted$residual_sd
-    cols[["n.valid"]]     <- cast_n_valid(fit$n_valid, target, method)
+    cols[["n.valid"]]     <- cast_n_valid(fit$n_valid, target, method, radius)
   }
   finalize(target, cols, output)
 }
 
 # --- internal: fit / cast / carry seam ------------------------------------
+
+# Names topocast() reserves for its own output columns: the diagnostic grids
+# (`r.squared`, `residual.sd`; `n.valid` is always unprefixed, even with several
+# responses, since the valid-cell mask is shared across them) and the intercept
+# column added by `coefficients = TRUE`. A response or predictor sharing one of
+# these names would silently collide with topocast()'s own output column of the
+# same name; rejecting it up front is simpler and more robust than tracking
+# exactly when prefixing would happen to avoid the collision.
+reserved_layer_names <- c("r.squared", "residual.sd", "n.valid", "(Intercept)")
+
+check_no_reserved_names <- function(names_used, what) {
+  bad <- intersect(names_used, reserved_layer_names)
+  if (length(bad))
+    stop(sprintf(paste0(
+      "`formula` uses `%s` as a %s name, which topocast() reserves for its own ",
+      "output columns (added by `diagnostics = TRUE`/`coefficients = TRUE`); ",
+      "rename the layer before calling topocast()."),
+      paste(bad, collapse = "`, `"), what))
+}
 
 # Parse a `response ~ pred1 + pred2` formula into bare layer names, rejecting
 # anything that is not a plain additive term. The left-hand side is a single bare
@@ -256,6 +282,9 @@ parse_topo_formula <- function(formula) {
              "Transformations, interactions, and `.` are not supported; ",
              "create the derived layer before calling topocast()."),
       paste(predictors[!valid], collapse = ", ")))
+
+  check_no_reserved_names(response, "response")
+  check_no_reserved_names(predictors, "predictor")
 
   list(response = response, predictors = predictors)
 }
@@ -309,12 +338,28 @@ harmonize_crs <- function(data, onto) {
     "  data: %s\n  onto: %s\n",
     "If these are the same projection with different WKT, align them with ",
     "`crs(onto) <- crs(data)` before calling topocast()."),
-    crs_label(desc_data), crs_label(desc_onto)))
+    crs_label(desc_data, data), crs_label(desc_onto, onto)))
 }
 
-crs_label <- function(desc) {
-  name <- if (!is.na(desc$name)) desc$name else "unknown CRS"
-  if (!is.na(desc$code)) sprintf("%s (%s:%s)", name, desc$authority, desc$code) else name
+# Describe a CRS for an error message: the registered name/EPSG code when
+# available. A CRS with no EPSG code (common for a custom or regional
+# projection, which automatic reconciliation above cannot apply to) has no
+# `desc$name` either, so fall back to the PROJ4 or WKT text of `spatial_obj`'s
+# own CRS; without this, two different unregistered CRSs both print as the
+# uninformative "unknown CRS", with nothing to show how they actually differ.
+crs_label <- function(desc, spatial_obj) {
+  # terra::crs(describe = TRUE) reports an unidentified name as the literal
+  # string "unknown", not NA; treat both as "no usable name".
+  has_name <- !is.na(desc$name) && !identical(desc$name, "unknown")
+  if (!is.na(desc$code))
+    return(sprintf("%s (%s:%s)", if (has_name) desc$name else "unnamed CRS",
+                   desc$authority, desc$code))
+  if (has_name) return(desc$name)
+  proj4 <- tryCatch(terra::crs(spatial_obj, proj = TRUE), error = function(e) "")
+  if (nzchar(proj4)) return(proj4)
+  wkt <- tryCatch(terra::crs(spatial_obj), error = function(e) "")
+  if (nzchar(wkt)) return(substr(wkt, 1L, 120L))
+  "unknown CRS"
 }
 
 # Pull named layers from a raster, with a clear error listing what is available.
@@ -339,7 +384,7 @@ resolve_predictors <- function(predictors, data, onto_grid, response_template, a
     if (name %in% names(data)) {
       layers[[i]] <- data[[name]]
     } else if (!is.null(onto_grid) && name %in% names(onto_grid)) {
-      layers[[i]] <- terra::resample(onto_grid[[name]], response_template, method = aggregate)
+      layers[[i]] <- resample_named(onto_grid[[name]], response_template, aggregate, "aggregate")
     } else if (is.null(onto_grid)) {
       stop(sprintf(paste0(
         "predictor `%s` named in `formula` is not a layer of `data`.\n",
@@ -376,9 +421,17 @@ fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, m
     parsed$response)
   predictor_matrices <- lapply(seq_len(terra::nlyr(predictor_raster)),
                                function(i) raster_to_matrix(predictor_raster[[i]]))
-  regression <- window_regression(response_matrices, predictor_matrices,
-                                  radius = radius, min_cells = min_cells,
-                                  min_variance = min_variance)
+  regression <- tryCatch(
+    window_regression(response_matrices, predictor_matrices,
+                      radius = radius, min_cells = min_cells,
+                      min_variance = min_variance),
+    error = function(e) {
+      if (grepl("nothing to regress", conditionMessage(e), fixed = TRUE))
+        stop("the coarse response and predictor layers (from `data`, and any ",
+             "predictor derived from `onto`) share no cell where every one is ",
+             "finite; there is nothing to fit.", call. = FALSE)
+      stop(e)
+    })
 
   n_valid <- matrix_to_raster(regression$n_valid, template)
   names(n_valid) <- "n.valid"
@@ -426,9 +479,10 @@ cast_onto <- function(rfit, predictors, target, method) {
 # Bring the shared valid-cell-count grid onto the target the same way as any other
 # coarse diagnostic. It is reported once per topocast() call, not once per response,
 # because the mask that produced it is complete-case across every response fit in
-# that call.
-cast_n_valid <- function(n_valid, target, method) {
-  clamp_nonneg(as_value(bring_onto_target(n_valid, target, method)))
+# that call. Clamped to [0, (2*radius+1)^2], the true range a window's valid-cell
+# count can ever hold, since resampling can carry it outside that range.
+cast_n_valid <- function(n_valid, target, method, radius) {
+  clamp_count(as_value(bring_onto_target(n_valid, target, method)), (2 * radius + 1)^2)
 }
 
 # Carry each coarse period's anomaly, relative to a coarse baseline, onto the fine
