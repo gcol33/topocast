@@ -50,8 +50,9 @@ static inline double window_sum(const arma::mat& ii,
 //
 // Response and predictors are centred on their global means before accumulation to
 // keep the summed-area tables well conditioned; the intercept is returned on the raw
-// scale. A per-window coefficient of determination is returned for each response from
-// the same sufficient statistics.
+// scale. A per-window coefficient of determination and residual standard deviation
+// are returned for each response, and a valid-cell count (shared across responses,
+// since the mask is complete-case), all from the same sufficient statistics.
 //
 // [[Rcpp::export]]
 List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
@@ -137,6 +138,10 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
   std::vector<arma::mat> intercept(R, nan_grid);
   std::vector<std::vector<arma::mat>> slope(R, std::vector<arma::mat>(k, nan_grid));
   std::vector<arma::mat> r_squared(R, nan_grid);
+  std::vector<arma::mat> residual_sd(R, nan_grid);
+  // The valid-cell mask is shared across every response in this call (see the
+  // complete-case masking above), so one grid of window counts covers all of them.
+  arma::mat n_valid = nan_grid;
 
   const int need = k + 1 + (min_cells > 0 ? min_cells : 0);
   const int nrows = (int)rows, ncols = (int)cols;
@@ -186,6 +191,8 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
       arma::mat Beta;
       if (!arma::solve(Beta, A, B)) continue;
 
+      n_valid(row, col) = n;
+
       for (int r = 0; r < R; ++r) {
         // Map the centred intercept back onto the raw response/predictor scale.
         double a = Beta(0, r) + mean_y[r];
@@ -195,8 +202,9 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
         }
         intercept[r](row, col) = a;
 
-        // R^2 from the same sufficient statistics: SSE = y'y - beta'(X'y),
-        // SST = y'y - (sum y)^2 / n, both about the window mean of the response.
+        // R^2 and residual SD from the same sufficient statistics:
+        // SSE = y'y - beta'(X'y), SST = y'y - (sum y)^2 / n, both about the window
+        // mean of the response.
         const double syy = window_sum(ii_yy[r], r0, c0, r1, c1);
         const double sy  = B(0, r);
         const double sst = syy - sy * sy / n;
@@ -207,19 +215,27 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
           if (rsq > 1.0) rsq = 1.0;
           r_squared[r](row, col) = rsq;
         }
+
+        // Residual SD needs residual degrees of freedom (n minus the k+1 fitted
+        // terms) to be positive; a window with n == need (min_cells == 0) has none.
+        const double dof = n - (k + 1);
+        if (dof > 0) residual_sd[r](row, col) = std::sqrt(std::max(0.0, sse) / dof);
       }
     }
   }
 
-  List intercept_out(R), slope_out(R), r2_out(R);
+  List intercept_out(R), slope_out(R), r2_out(R), resid_sd_out(R);
   for (int r = 0; r < R; ++r) {
     intercept_out[r] = intercept[r];
     List slope_r(k);
     for (int j = 0; j < k; ++j) slope_r[j] = slope[r][j];
     slope_out[r] = slope_r;
     r2_out[r] = r_squared[r];
+    resid_sd_out[r] = residual_sd[r];
   }
   return List::create(_["intercept"] = intercept_out,
                       _["slope"] = slope_out,
-                      _["r_squared"] = r2_out);
+                      _["r_squared"] = r2_out,
+                      _["residual_sd"] = resid_sd_out,
+                      _["n_valid"] = n_valid);
 }

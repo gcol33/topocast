@@ -69,15 +69,45 @@ test_that("several responses prefix their coefficient grids by response name", {
                  "temp", "temp.(Intercept)", "temp.elev"))
 })
 
-test_that("diagnostics returns an r.squared layer within [0, 1]", {
+test_that("diagnostics returns r.squared, residual.sd, and n.valid layers (issue #8)", {
   skip_if_not_installed("terra")
   grids <- make_grids()
   out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
                   radius = 3, diagnostics = TRUE)
-  expect_equal(names(out), c("prec", "r.squared"))
+  expect_equal(names(out), c("prec", "r.squared", "residual.sd", "n.valid"))
+
   r2 <- terra::values(out[["r.squared"]])
   r2 <- r2[is.finite(r2)]
   expect_true(all(r2 >= 0 & r2 <= 1))
+
+  rsd <- terra::values(out[["residual.sd"]])
+  rsd <- rsd[is.finite(rsd)]
+  expect_true(all(rsd >= 0))
+
+  nv <- terra::values(out[["n.valid"]])
+  nv <- nv[is.finite(nv)]
+  expect_true(all(nv > 0))
+  expect_true(all(nv <= (2 * 3 + 1)^2))
+})
+
+test_that("with several responses, n.valid is shared (not prefixed) but r.squared/residual.sd are (issue #8)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  temp <- 25 - 0.006 * grids$data[["elev"]]; names(temp) <- "temp"
+  out <- topocast(cbind(prec, temp) ~ elev, data = c(grids$data, temp),
+                  onto = grids$terrain, radius = 3, diagnostics = TRUE)
+  expect_equal(names(out),
+               c("prec", "prec.r.squared", "prec.residual.sd",
+                 "temp", "temp.r.squared", "temp.residual.sd", "n.valid"))
+})
+
+test_that("diagnostics adds residual.sd and n.valid alongside r.squared with anomaly (issue #8)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+                  radius = 3, anomaly = grids$data[["prec"]], type = "ratio",
+                  diagnostics = TRUE)
+  expect_equal(names(out), c("prec", "r.squared", "residual.sd", "n.valid"))
 })
 
 test_that("clamp bounds the output to the coarse response range", {

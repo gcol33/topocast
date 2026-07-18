@@ -48,6 +48,36 @@ test_that("a stars input round-trips to a stars output with matching values", {
                as.numeric(terra::values(terra_out)), tolerance = 1e-6)
 })
 
+test_that("anomaly and baseline accept Raster*/stars like data/onto do (issue #5)", {
+  skip_if_not_installed("terra")
+  skip_if_not_installed("raster")
+  skip_if_not_installed("stars")
+  grids <- make_io_grids()
+  coarse_prec <- grids$data[["prec"]]
+  baseline_out <- topocast(prec ~ elev, data = grids$data, onto = grids$terrain,
+                           radius = 4, anomaly = coarse_prec, type = "ratio")
+
+  out_raster_anomaly <- topocast(prec ~ elev, data = grids$data, onto = grids$terrain,
+                                 radius = 4, anomaly = raster::raster(coarse_prec), type = "ratio")
+  expect_equal(terra::values(out_raster_anomaly), terra::values(baseline_out), tolerance = 1e-9)
+
+  out_stars_anomaly <- topocast(prec ~ elev, data = grids$data, onto = grids$terrain,
+                                radius = 4, anomaly = stars::st_as_stars(coarse_prec), type = "ratio")
+  expect_equal(terra::values(out_stars_anomaly), terra::values(baseline_out), tolerance = 1e-9)
+
+  out_raster_baseline <- topocast(prec ~ elev, data = grids$data, onto = grids$terrain,
+                                  radius = 4, anomaly = coarse_prec,
+                                  baseline = raster::raster(coarse_prec), type = "ratio")
+  expect_equal(terra::values(out_raster_baseline), terra::values(baseline_out), tolerance = 1e-9)
+
+  expect_error(topocast(prec ~ elev, data = grids$data, onto = grids$terrain,
+                        radius = 4, anomaly = 1:10, type = "ratio"),
+               "SpatRaster, Raster\\* \\(raster\\), or stars")
+  expect_error(topocast(prec ~ elev, data = grids$data, onto = grids$terrain,
+                        radius = 4, anomaly = coarse_prec, baseline = 1:10, type = "ratio"),
+               "SpatRaster, Raster\\* \\(raster\\), or stars")
+})
+
 test_that("output = requests an explicit class for a grid target", {
   skip_if_not_installed("terra")
   skip_if_not_installed("raster")

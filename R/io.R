@@ -129,6 +129,13 @@ clamp_unit <- function(x) {
   pmin(pmax(x, 0), 1)
 }
 
+# Clamp to non-negative, for SpatRaster or numeric. Resampling the coarse residual-SD
+# or valid-cell-count grid can carry it slightly below zero; neither value can be.
+clamp_nonneg <- function(x) {
+  if (inherits(x, "SpatRaster")) return(terra::clamp(x, lower = 0, values = TRUE))
+  pmax(x, 0)
+}
+
 # The observed range of a coarse response layer, the bounds the downscaled field is
 # clamped to when `clamp = TRUE`.
 response_range <- function(data, response) {

@@ -153,6 +153,17 @@ returned by `diagnostics = TRUE` as an `r.squared` grid on the fine resolution. 
 maps where the terrain explains the response and where the downscaled field
 carries little more than the coarse level.
 
+The same statistics also give the residual standard deviation,
+$\hat\sigma(r,c) = \sqrt{\mathrm{SSE} / (n - k - 1)}$, in the response's own units
+rather than R-squared's unitless, variance-relative scale, and the window's valid
+cell count $n$ itself. `diagnostics = TRUE` returns both, as `residual.sd` and
+`n.valid`. A low R-squared is ambiguous on its own: it can mean the terrain-response
+relationship is genuinely weak in that neighbourhood, or that the window barely
+cleared the minimum valid-cell count and the fit is just noisy from too little data.
+`n.valid` tells the two apart. Because the valid-cell mask is complete-case across
+every response fit in one call, `n.valid` is one shared grid rather than one per
+response.
+
 ## Carrying a time series
 
 A climatology is one field. A time series shares the terrain relationship across

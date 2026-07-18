@@ -63,16 +63,24 @@
 #' @param coefficients If `TRUE`, return the fitted layer together with the
 #'   `(Intercept)` and per-predictor slope grids on the `onto` grid. Not supported
 #'   with `anomaly`. Default `FALSE`.
-#' @param diagnostics If `TRUE`, also return an `r.squared` grid (or column): the
-#'   per-window coefficient of determination of the local fit, brought onto `onto`.
-#'   It maps where the terrain relationship is strong and where the downscaled field
-#'   rests mostly on the coarse input. Default `FALSE`.
-#' @param anomaly Optional multi-layer `SpatRaster` on the coarse grid; each layer
-#'   is one period to downscale relative to `baseline`. When supplied, the result
-#'   has one layer (or column) per period.
-#' @param baseline Optional single-layer `SpatRaster`, the coarse response baseline
-#'   that `anomaly` is taken relative to. Defaults to the response layer of `data`.
-#'   Ignored when `anomaly` is `NULL`.
+#' @param diagnostics If `TRUE`, also return three grids (or columns) describing the
+#'   local fit, each brought onto `onto`: `r.squared`, the per-window coefficient of
+#'   determination, mapping where the terrain relationship is strong and where the
+#'   downscaled field rests mostly on the coarse input; `residual.sd`, the residual
+#'   standard deviation of the local fit in the response's own units; and `n.valid`,
+#'   the count of valid coarse cells the window held, which tells a fit that is weak
+#'   because the window barely cleared the minimum valid-cell requirement apart from
+#'   one that is weak because the terrain relationship is genuinely noisy there.
+#'   `n.valid` is reported once per call, not once per response, since the
+#'   valid-cell mask is complete-case across every response fit together. Default
+#'   `FALSE`.
+#' @param anomaly Optional multi-layer coarse grid (a `SpatRaster`, `Raster*`, or
+#'   `stars` object, like `data`); each layer is one period to downscale relative
+#'   to `baseline`. When supplied, the result has one layer (or column) per period.
+#' @param baseline Optional single-layer coarse grid (a `SpatRaster`, `Raster*`, or
+#'   `stars` object, like `data`), the coarse response baseline that `anomaly` is
+#'   taken relative to. Defaults to the response layer of `data`. Ignored when
+#'   `anomaly` is `NULL`.
 #' @param type `"ratio"` (multiplicative) or `"additive"`; used only with
 #'   `anomaly`.
 #' @param method Resampling method for the coefficient grids, passed to
@@ -90,10 +98,12 @@
 #'   or the class named by `output`. For a grid target: a single layer named for
 #'   the response; one layer per response with a `cbind()` left-hand side; one layer
 #'   per period when `anomaly` is supplied; the fitted layer plus `(Intercept)` and
-#'   slope grids when `coefficients = TRUE`; and an `r.squared` grid when
-#'   `diagnostics = TRUE`. With several responses the coefficient and diagnostic
-#'   grids are prefixed by the response name. For a point target the same quantities
-#'   are returned as prediction columns.
+#'   slope grids when `coefficients = TRUE`; and `r.squared` and `residual.sd` grids
+#'   plus a shared `n.valid` grid when `diagnostics = TRUE`. With several responses
+#'   the coefficient, `r.squared`, and `residual.sd` grids are prefixed by the
+#'   response name; `n.valid` is not, since it is the same valid-cell mask for every
+#'   response fit in the call. For a point target the same quantities are returned
+#'   as prediction columns.
 #'
 #' @seealso [window_regression()] for the matrix engine.
 #'
@@ -178,23 +188,29 @@ topocast <- function(formula, data, onto, radius,
       cols[[resp]] <- fitted
       if (coefficients)
         cols <- c(cols, if (multi) prefix_names(casted$coef_cols, resp) else casted$coef_cols)
-      if (diagnostics)
-        cols[[if (multi) paste0(resp, ".r.squared") else "r.squared"]] <- casted$r_squared
+      if (diagnostics) {
+        cols[[if (multi) paste0(resp, ".r.squared")   else "r.squared"]]   <- casted$r_squared
+        cols[[if (multi) paste0(resp, ".residual.sd") else "residual.sd"]] <- casted$residual_sd
+      }
     }
+    if (diagnostics) cols[["n.valid"]] <- cast_n_valid(fit$n_valid, target, method)
     return(finalize(target, cols, output))
   }
 
-  if (!inherits(anomaly, "SpatRaster"))
-    stop("`anomaly` must be a SpatRaster")
+  anomaly <- as_grid(anomaly, "anomaly")
   rfit   <- fit$responses[[1L]]
   resp   <- rfit$response
   casted <- cast_onto(rfit, fit$predictors, target, method = method)
   fine_baseline <- casted$fitted
   if (clamp) fine_baseline <- clamp_values(fine_baseline, response_range(data, resp), target)
-  if (is.null(baseline)) baseline <- data[[resp]]
+  baseline <- if (is.null(baseline)) data[[resp]] else as_grid(baseline, "baseline")
   cols <- carry_anomalies(fine_baseline, anomaly, baseline, target,
                           type = type, method = method)
-  if (diagnostics) cols[["r.squared"]] <- casted$r_squared
+  if (diagnostics) {
+    cols[["r.squared"]]   <- casted$r_squared
+    cols[["residual.sd"]] <- casted$residual_sd
+    cols[["n.valid"]]     <- cast_n_valid(fit$n_valid, target, method)
+  }
   finalize(target, cols, output)
 }
 
@@ -331,10 +347,11 @@ resolve_predictors <- function(predictors, data, onto_grid, response_template, a
 }
 
 # Fit the coarse coefficient grids. The predictors are shared across responses, so
-# one engine call returns the intercept, slopes, and per-cell R-squared for every
-# response. Returns the shared predictor names and a per-response fit, each holding
-# the coefficient SpatRaster (intercept plus one slope per predictor) and the
-# R-squared grid on the coarse grid.
+# one engine call returns the intercept, slopes, and per-cell R-squared/residual SD
+# for every response, plus a valid-cell count shared across them (the mask is
+# complete-case). Returns the shared predictor names, a per-response fit (the
+# coefficient SpatRaster, the R-squared grid, and the residual-SD grid, each on the
+# coarse grid), and the shared valid-cell-count grid.
 fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, min_variance) {
   response_raster  <- select_layers(data, parsed$response, "data")
   template         <- response_raster[[1L]]
@@ -351,6 +368,9 @@ fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, m
                                   radius = radius, min_cells = min_cells,
                                   min_variance = min_variance)
 
+  n_valid <- matrix_to_raster(regression$n_valid, template)
+  names(n_valid) <- "n.valid"
+
   responses <- lapply(parsed$response, function(resp) {
     coefficients <- terra::rast(c(
       list(matrix_to_raster(regression$intercept[[resp]], template)),
@@ -358,19 +378,23 @@ fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, m
     names(coefficients) <- c("(Intercept)", parsed$predictors)
     r_squared <- matrix_to_raster(regression$r_squared[[resp]], template)
     names(r_squared) <- "r.squared"
-    list(response = resp, coefficients = coefficients, r_squared = r_squared)
+    residual_sd <- matrix_to_raster(regression$residual_sd[[resp]], template)
+    names(residual_sd) <- "residual.sd"
+    list(response = resp, coefficients = coefficients,
+         r_squared = r_squared, residual_sd = residual_sd)
   })
-  list(predictors = parsed$predictors, responses = responses)
+  list(predictors = parsed$predictors, responses = responses, n_valid = n_valid)
 }
 
 # Evaluate one response's fitted relationship on the target. The coarse coefficient
-# grids and the R-squared grid are brought onto the target together (resampled to the
-# fine grid, or interpolated at point geometries) and combined with the target
-# predictors as fitted = intercept + sum_j slope_j * predictor_j. Returns the fitted
-# values, the per-coefficient grids/columns, and the R-squared, in the target's
-# representation.
+# grids, the R-squared grid, and the residual-SD grid are brought onto the target
+# together (resampled to the fine grid, or interpolated at point geometries) and
+# combined with the target predictors as fitted = intercept + sum_j slope_j *
+# predictor_j. Returns the fitted values, the per-coefficient grids/columns, the
+# R-squared, and the residual SD, in the target's representation.
 cast_onto <- function(rfit, predictors, target, method) {
-  bundle <- bring_onto_target(c(rfit$coefficients, rfit$r_squared), target, method)
+  bundle <- bring_onto_target(c(rfit$coefficients, rfit$r_squared, rfit$residual_sd),
+                              target, method)
   preds  <- target_predictors(target, predictors)
 
   intercept <- bundle[["(Intercept)"]]
@@ -383,7 +407,16 @@ cast_onto <- function(rfit, predictors, target, method) {
     c(list(intercept), lapply(predictors, function(p) slopes[[p]])),
     c("(Intercept)", predictors))
   list(fitted = fitted, coef_cols = coef_cols,
-       r_squared = clamp_unit(bundle[["r.squared"]]))
+       r_squared   = clamp_unit(bundle[["r.squared"]]),
+       residual_sd = clamp_nonneg(bundle[["residual.sd"]]))
+}
+
+# Bring the shared valid-cell-count grid onto the target the same way as any other
+# coarse diagnostic. It is reported once per topocast() call, not once per response,
+# because the mask that produced it is complete-case across every response fit in
+# that call.
+cast_n_valid <- function(n_valid, target, method) {
+  clamp_nonneg(as_value(bring_onto_target(n_valid, target, method)))
 }
 
 # Carry each coarse period's anomaly, relative to a coarse baseline, onto the fine

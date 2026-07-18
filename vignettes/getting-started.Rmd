@@ -194,14 +194,20 @@ coarse input.
 ## Where the fit is strong
 
 How much of the response the terrain actually explains varies across the map.
-`diagnostics = TRUE` returns that as an `r.squared` grid: the coefficient of
-determination of each window fit, carried onto the fine grid. High values mark
-where the terrain relationship is tight and the downscaling adds real detail; low
-values mark where the fitted field rests mostly on the coarse level.
+`diagnostics = TRUE` returns three grids, carried onto the fine grid: `r.squared`,
+the coefficient of determination of each window fit; `residual.sd`, the residual
+standard deviation of the fit in the response's own units; and `n.valid`, the count
+of valid coarse cells the window held. High `r.squared` marks where the terrain
+relationship is tight and the downscaling adds real detail; low values mark where
+the fitted field rests mostly on the coarse level. `n.valid` tells apart a low
+`r.squared` because the window barely had enough cells to fit from one because the
+relationship is genuinely noisy there; with several responses it is one shared
+grid, not one per response, since the valid-cell mask is complete-case across them.
 
 ```{r diagnostics, fig.height = 3.6}
 fit_quality <- topocast(prec ~ elev + slope, data = coarse, onto = terrain,
                         radius = 4, diagnostics = TRUE)
+names(fit_quality)
 plot(fit_quality[["r.squared"]], main = "local R-squared", range = c(0, 1))
 ```
 

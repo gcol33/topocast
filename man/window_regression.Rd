@@ -24,10 +24,14 @@ must have for the cell to be fit. Default \code{1e-8}.}
 }
 \value{
 A list with \code{intercept} (a numeric matrix), \code{slope} (a list of numeric
-matrices, one per predictor), and \code{r_squared} (a numeric matrix), each the
-same size as \code{y}. When \code{y} is a list of responses, \code{intercept} and \code{r_squared}
-are lists of matrices and \code{slope} is a list of per-response slope lists, named
-for the responses.
+matrices, one per predictor), \code{r_squared} (a numeric matrix), \code{residual_sd} (a
+numeric matrix, the residual standard deviation of the local fit; \code{NA} where
+the window has no residual degrees of freedom), and \code{n_valid} (a numeric
+matrix, the count of valid cells the window held), each the same size as \code{y}.
+\code{n_valid} is shared across responses, since the valid-cell mask is
+complete-case across them. When \code{y} is a list of responses, \code{intercept},
+\code{r_squared}, and \code{residual_sd} are lists of matrices and \code{slope} is a list of
+per-response slope lists, named for the responses.
 }
 \description{
 Fits, for every cell, a linear regression of one or more responses on a shared

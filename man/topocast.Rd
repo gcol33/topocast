@@ -50,18 +50,26 @@ side \code{2 * radius + 1}.}
 \code{(Intercept)} and per-predictor slope grids on the \code{onto} grid. Not supported
 with \code{anomaly}. Default \code{FALSE}.}
 
-\item{diagnostics}{If \code{TRUE}, also return an \code{r.squared} grid (or column): the
-per-window coefficient of determination of the local fit, brought onto \code{onto}.
-It maps where the terrain relationship is strong and where the downscaled field
-rests mostly on the coarse input. Default \code{FALSE}.}
+\item{diagnostics}{If \code{TRUE}, also return three grids (or columns) describing the
+local fit, each brought onto \code{onto}: \code{r.squared}, the per-window coefficient of
+determination, mapping where the terrain relationship is strong and where the
+downscaled field rests mostly on the coarse input; \code{residual.sd}, the residual
+standard deviation of the local fit in the response's own units; and \code{n.valid},
+the count of valid coarse cells the window held, which tells a fit that is weak
+because the window barely cleared the minimum valid-cell requirement apart from
+one that is weak because the terrain relationship is genuinely noisy there.
+\code{n.valid} is reported once per call, not once per response, since the
+valid-cell mask is complete-case across every response fit together. Default
+\code{FALSE}.}
 
-\item{anomaly}{Optional multi-layer \code{SpatRaster} on the coarse grid; each layer
-is one period to downscale relative to \code{baseline}. When supplied, the result
-has one layer (or column) per period.}
+\item{anomaly}{Optional multi-layer coarse grid (a \code{SpatRaster}, \verb{Raster*}, or
+\code{stars} object, like \code{data}); each layer is one period to downscale relative
+to \code{baseline}. When supplied, the result has one layer (or column) per period.}
 
-\item{baseline}{Optional single-layer \code{SpatRaster}, the coarse response baseline
-that \code{anomaly} is taken relative to. Defaults to the response layer of \code{data}.
-Ignored when \code{anomaly} is \code{NULL}.}
+\item{baseline}{Optional single-layer coarse grid (a \code{SpatRaster}, \verb{Raster*}, or
+\code{stars} object, like \code{data}), the coarse response baseline that \code{anomaly} is
+taken relative to. Defaults to the response layer of \code{data}. Ignored when
+\code{anomaly} is \code{NULL}.}
 
 \item{type}{\code{"ratio"} (multiplicative) or \code{"additive"}; used only with
 \code{anomaly}.}
@@ -85,10 +93,12 @@ The downscaled result on the geometry of \code{onto}, in the class of \code{onto
 or the class named by \code{output}. For a grid target: a single layer named for
 the response; one layer per response with a \code{cbind()} left-hand side; one layer
 per period when \code{anomaly} is supplied; the fitted layer plus \code{(Intercept)} and
-slope grids when \code{coefficients = TRUE}; and an \code{r.squared} grid when
-\code{diagnostics = TRUE}. With several responses the coefficient and diagnostic
-grids are prefixed by the response name. For a point target the same quantities
-are returned as prediction columns.
+slope grids when \code{coefficients = TRUE}; and \code{r.squared} and \code{residual.sd} grids
+plus a shared \code{n.valid} grid when \code{diagnostics = TRUE}. With several responses
+the coefficient, \code{r.squared}, and \code{residual.sd} grids are prefixed by the
+response name; \code{n.valid} is not, since it is the same valid-cell mask for every
+response fit in the call. For a point target the same quantities are returned
+as prediction columns.
 }
 \description{
 Fits a local linear regression of a coarse response on one or more coarse

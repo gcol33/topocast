@@ -10,11 +10,24 @@
   determination of the local fit, computed from the same summed-area sufficient
   statistics, mapping where the terrain relationship is strong. `window_regression()`
   now returns `r_squared` alongside `intercept` and `slope`.
+* `diagnostics = TRUE` also returns `residual.sd` (the residual standard deviation of
+  the local fit, in the response's own units) and `n.valid` (the count of valid
+  coarse cells the window held), from the same sufficient statistics as `r.squared`.
+  `n.valid` is shared across responses rather than prefixed, since the valid-cell mask
+  is complete-case across them; `residual.sd` is prefixed like `r.squared` is.
+  `window_regression()` likewise returns `residual_sd` and `n_valid` (#8).
 * `clamp = TRUE` bounds the downscaled field to the observed range of the coarse
   response, a guard against the local linear fit extrapolating without limit where a
   fine predictor lies outside the range it was fit on.
 * The per-cell window solve runs in parallel with OpenMP where the toolchain
   provides it; results are unchanged.
+* `anomaly` and `baseline` accept a `Raster*` (raster) or `stars` object, like `data`
+  and `onto` already did, instead of only a `SpatRaster` (#5).
+* `radius` and `min_cells` are validated as non-negative whole numbers before
+  reaching the C++ engine. A negative `radius` previously indexed the summed-area
+  table out of bounds and crashed the R session rather than erroring (#4).
+* `window_regression()` rejects a partially-named list of responses instead of
+  silently making the unnamed ones' results unreachable by name (#6).
 
 # topocast 0.0.3
 

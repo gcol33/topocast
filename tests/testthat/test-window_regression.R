@@ -143,3 +143,19 @@ test_that("radius and min_cells are validated as non-negative whole numbers (iss
   expect_equal(window_regression(climate, elevation, radius = 3),
                window_regression(climate, elevation, radius = 3L))
 })
+
+test_that("a partially-named response list is rejected rather than losing a result (issue #6)", {
+  set.seed(25)
+  elevation <- matrix(runif(100, 0, 2000), 10, 10)
+  rain <- 800 - 0.1 * elevation
+  temp <- 15 - 0.006 * elevation
+
+  expect_error(window_regression(list(rain = rain, temp), elevation, radius = 3),
+               "must be named, or none of them")
+
+  # fully unnamed and fully named lists both still work
+  unnamed <- window_regression(list(rain, temp), elevation, radius = 3)
+  expect_equal(names(unnamed$slope), c("response1", "response2"))
+  named <- window_regression(list(rain = rain, temp = temp), elevation, radius = 3)
+  expect_equal(names(named$slope), c("rain", "temp"))
+})
