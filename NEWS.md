@@ -34,6 +34,25 @@
   rejected (#10).
 * `window_regression()` rejects a partially-named list of responses instead of
   silently making the unnamed ones' results unreachable by name (#6).
+* `window_regression()` rejects a list of responses with a repeated name, which
+  had the same unreachable-by-name problem as #6 but was not caught by it (#15).
+* A `min_cells` close to `.Machine$integer.max` no longer overflows the C++
+  engine's valid-cell threshold; previously the overflow silently disabled the
+  guard instead of enforcing it, so windows with far fewer than the requested
+  minimum could still be fit (#13).
+* A `radius` close to `.Machine$integer.max` no longer crashes the R session;
+  it is now clamped to the grid's span, which covers every cell in every
+  window anyway and so changes no result (#14).
+* `diagnostics = TRUE`'s `n.valid` (and `window_regression()`'s `n_valid`) now
+  reports a window's valid-cell count whenever the window held enough cells to
+  attempt a fit, rather than only when the fit also succeeded; a degenerate
+  (no-spread predictor) or singular window previously reported `n.valid = NA`
+  indistinguishably from a window that never had enough cells (#16).
+* A window whose predictors are exactly collinear (rank-deficient design) now
+  reliably returns `NA` instead of a spurious least-squares coefficient;
+  Armadillo's default solver silently falls back to an approximate solution on
+  a detected-singular system rather than failing, which defeated the
+  documented singular-design guard (#17).
 
 # topocast 0.0.3
 

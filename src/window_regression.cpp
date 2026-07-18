@@ -143,7 +143,10 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
   // complete-case masking above), so one grid of window counts covers all of them.
   arma::mat n_valid = nan_grid;
 
-  const int need = k + 1 + (min_cells > 0 ? min_cells : 0);
+  // Computed in double, not int: k + 1 + min_cells can exceed INT_MAX when
+  // min_cells is large (it is validated only against .Machine$integer.max on
+  // the R side, not against k + 1 + min_cells), and n below is already a double.
+  const double need = (double)k + 1.0 + (double)min_cells;
   const int nrows = (int)rows, ncols = (int)cols;
 
 #ifdef _OPENMP
@@ -158,6 +161,13 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
 
       const double n = window_sum(ii_count, r0, c0, r1, c1);
       if (n < need) continue;
+
+      // Recorded as soon as the window holds enough valid cells to attempt a
+      // fit, independent of whether the fit itself succeeds below: n_valid
+      // reports how much data the window held, not whether that data produced
+      // a coefficient. r_squared/residual_sd/intercept/slope stay NA in the
+      // degenerate/singular cases that follow.
+      n_valid(row, col) = n;
 
       // Predictor side of the normal equations, shared by every response.
       arma::mat A(k + 1, k + 1, arma::fill::zeros);
@@ -188,10 +198,13 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
           B(j + 1, r) = window_sum(ii_xy[j][r], r0, c0, r1, c1);
       }
 
+      // solve_opts::no_approx is required here: Armadillo's default solve()
+      // silently falls back to a least-squares (pseudo-inverse) solution on a
+      // detected-singular system instead of failing, which would return a
+      // coefficient for an exactly rank-deficient window (e.g. one predictor
+      // an exact linear function of another) rather than the documented NA.
       arma::mat Beta;
-      if (!arma::solve(Beta, A, B)) continue;
-
-      n_valid(row, col) = n;
+      if (!arma::solve(Beta, A, B, arma::solve_opts::no_approx)) continue;
 
       for (int r = 0; r < R; ++r) {
         // Map the centred intercept back onto the raw response/predictor scale.

@@ -75,11 +75,26 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
         "every element of `y` must be named, or none of them; got unnamed element(s) ",
         "at position(s) %s. A result for an unnamed response is not reachable by name."),
         paste(which(nm == ""), collapse = ", ")))
+    # A repeated name has the same "unreachable by name" problem as an unnamed
+    # element: `res$slope[["name"]]` always resolves to the first match, so the
+    # duplicate's result would silently vanish rather than erroring.
+    if (!is.null(nm) && anyDuplicated(nm))
+      stop(sprintf(paste0(
+        "every element of `y` must have a unique name; got a repeated name: %s. ",
+        "A result under a repeated name is not reachable by name."),
+        paste(unique(nm[duplicated(nm)]), collapse = ", ")))
   }
 
   radius       <- check_count(radius, "radius")
   min_cells    <- check_count(min_cells, "min_cells")
   min_variance <- check_nonneg(min_variance, "min_variance")
+
+  # A radius at or beyond the grid dimensions already covers every cell in
+  # every window; clamping here keeps `row + radius` from overflowing a signed
+  # 32-bit int in the C++ engine for a radius near .Machine$integer.max, without
+  # changing any result.
+  grid_span <- max(nrow(y_list[[1L]]), ncol(y_list[[1L]]))
+  radius <- min(radius, grid_span)
 
   res <- window_regression_cpp(y_list, x, radius, min_cells, min_variance)
 

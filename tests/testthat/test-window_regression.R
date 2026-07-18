@@ -197,3 +197,90 @@ test_that("a partially-named response list is rejected rather than losing a resu
   named <- window_regression(list(rain = rain, temp = temp), elevation, radius = 3)
   expect_equal(names(named$slope), c("rain", "temp"))
 })
+
+test_that("a duplicate-named response list is rejected rather than hiding a result (issue #15)", {
+  set.seed(27)
+  elevation <- matrix(runif(100, 0, 2000), 10, 10)
+  jan <- 30 - 0.006 * elevation
+  jul <- 10 + 0.01 * elevation   # a genuinely different response, same name by mistake
+
+  # previously: no error, and jul's fit was computed but unreachable under
+  # `$slope[["prec"]]`, which always resolved to jan's (the first match).
+  expect_error(window_regression(list(prec = jan, prec = jul), elevation, radius = 2),
+               "unique name")
+})
+
+test_that("min_cells near .Machine$integer.max no longer overflows the valid-cell guard (issue #13)", {
+  set.seed(28)
+  elevation <- matrix(runif(25, 0, 2000), 5, 5)
+  climate <- 30 - 0.006 * elevation
+
+  # previously, k + 1 + min_cells overflowed a 32-bit int and wrapped negative,
+  # so every window passed the valid-cell check regardless of how few cells it
+  # actually held; a 5x5 grid can never hold this many valid cells anywhere.
+  fit <- window_regression(climate, elevation, radius = 1,
+                           min_cells = .Machine$integer.max - 1)
+  expect_true(all(is.na(fit$intercept)))
+  expect_true(all(is.na(fit$slope[[1]])))
+})
+
+test_that("radius near .Machine$integer.max is clamped to the grid span instead of crashing (issue #14)", {
+  set.seed(29)
+  elevation <- matrix(runif(15, 0, 2000), 3, 5)
+  climate <- 30 - 0.006 * elevation
+
+  # previously, row + radius overflowed a signed 32-bit int for row >= 1 and
+  # crashed the R session; any radius at or beyond the grid span covers every
+  # cell in every window, so clamping it changes nothing about the result.
+  huge <- window_regression(climate, elevation, radius = .Machine$integer.max - 1L)
+  full <- window_regression(climate, elevation,
+                            radius = max(nrow(elevation), ncol(elevation)))
+  expect_equal(huge, full)
+})
+
+test_that("n_valid reports the raw valid-cell count even when the window is degenerate (issue #16)", {
+  flat <- matrix(1500, 8, 8)
+  climate <- matrix(rnorm(64, 10, 1), 8, 8)
+  radius <- 3
+  fit <- window_regression(climate, flat, radius = radius)
+
+  # the no-spread guard still returns NA coefficients everywhere
+  expect_true(all(is.na(fit$slope[[1]])))
+  expect_true(all(is.na(fit$intercept)))
+
+  # but n_valid, unlike the coefficients, reports the window's raw valid-cell
+  # count rather than NA: every window here holds real data, just a flat
+  # predictor, and n_valid should say so rather than looking identical to a
+  # window that never had enough cells to begin with.
+  expect_false(anyNA(fit$n_valid))
+  expect_equal(fit$n_valid[4, 4], (2 * radius + 1)^2)
+})
+
+test_that("min_cells > 0 excludes windows that min_cells = 0 would fit (issue #17)", {
+  elevation <- matrix(NA_real_, 5, 5)
+  climate   <- matrix(NA_real_, 5, 5)
+  # exactly two valid, distinct-elevation cells fall in the radius-1 window
+  # centred at (3, 3); every other cell in this grid is NA.
+  elevation[3, 3] <- 1000; elevation[3, 4] <- 1200
+  climate[3, 3]   <- 20;   climate[3, 4]   <- 18
+
+  fit0 <- window_regression(climate, elevation, radius = 1, min_cells = 0)
+  expect_false(is.na(fit0$intercept[3, 3]))
+
+  fit1 <- window_regression(climate, elevation, radius = 1, min_cells = 1)
+  expect_true(is.na(fit1$intercept[3, 3]))
+})
+
+test_that("a rank-deficient multi-predictor window returns NA rather than an unstable fit (issue #17)", {
+  # x2 is an exact linear function of x1 (and the intercept) everywhere, so the
+  # window design matrix is singular even though x1 and x2 each individually
+  # have real within-window variance and so do not trip the no-spread guard.
+  x1 <- matrix(1:25, 5, 5)
+  x2 <- 3 + 2 * x1
+  y  <- matrix(rnorm(25), 5, 5)
+
+  fit <- window_regression(y, list(x1, x2), radius = 2)
+  expect_true(all(is.na(fit$intercept)))
+  expect_true(all(is.na(fit$slope[[1]])))
+  expect_true(all(is.na(fit$slope[[2]])))
+})
