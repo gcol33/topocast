@@ -124,3 +124,22 @@ test_that("the complete-case mask is shared across responses", {
   ref <- window_regression_ref(rain_masked, elevation, radius = 2)
   expect_equal(multi$slope[[1]][[1]], ref$slope[[1]], tolerance = 1e-6)
 })
+
+test_that("radius and min_cells are validated as non-negative whole numbers (issue #4)", {
+  set.seed(24)
+  elevation <- matrix(runif(100, 0, 2000), 10, 10)
+  climate <- 30 - 0.006 * elevation
+
+  # a negative radius previously indexed the summed-area table out of bounds and
+  # crashed the R session; it must now be a clean error.
+  expect_error(window_regression(climate, elevation, radius = -3), "non-negative whole number")
+  expect_error(window_regression(climate, elevation, radius = 2.9), "non-negative whole number")
+  expect_error(window_regression(climate, elevation, radius = NA), "non-negative whole number")
+  expect_error(window_regression(climate, elevation, radius = c(3, 4)), "non-negative whole number")
+  expect_error(window_regression(climate, elevation, radius = 3, min_cells = -5),
+               "non-negative whole number")
+
+  # valid whole-number radii, integer or double, still work and agree
+  expect_equal(window_regression(climate, elevation, radius = 3),
+               window_regression(climate, elevation, radius = 3L))
+})

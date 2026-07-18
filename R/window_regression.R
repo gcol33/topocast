@@ -64,8 +64,10 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
   if (!all(vapply(y_list, is.matrix, logical(1))))
     stop("every element of `y` must be a matrix")
 
-  res <- window_regression_cpp(y_list, x, as.integer(radius),
-                               as.integer(min_cells), as.numeric(min_variance))
+  radius     <- check_count(radius, "radius")
+  min_cells  <- check_count(min_cells, "min_cells")
+
+  res <- window_regression_cpp(y_list, x, radius, min_cells, as.numeric(min_variance))
 
   if (single)
     return(list(intercept = res$intercept[[1L]],
@@ -77,4 +79,16 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
   list(intercept = stats::setNames(res$intercept, nm),
        slope     = stats::setNames(res$slope, nm),
        r_squared = stats::setNames(res$r_squared, nm))
+}
+
+# A single finite, non-negative whole number, coerced to integer. `radius` and
+# `min_cells` reach the C++ engine's window bounds and valid-cell threshold
+# unchecked otherwise; a negative radius there indexes the summed-area table out of
+# bounds and crashes the R session rather than erroring.
+check_count <- function(x, argument) {
+  ok <- is.numeric(x) && length(x) == 1L && is.finite(x) && x >= 0 && x == round(x)
+  if (!ok)
+    stop(sprintf("`%s` must be a single non-negative whole number, not %s",
+                 argument, paste(deparse(x), collapse = " ")))
+  as.integer(x)
 }
