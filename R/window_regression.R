@@ -77,10 +77,11 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
         paste(which(nm == ""), collapse = ", ")))
   }
 
-  radius     <- check_count(radius, "radius")
-  min_cells  <- check_count(min_cells, "min_cells")
+  radius       <- check_count(radius, "radius")
+  min_cells    <- check_count(min_cells, "min_cells")
+  min_variance <- check_nonneg(min_variance, "min_variance")
 
-  res <- window_regression_cpp(y_list, x, radius, min_cells, as.numeric(min_variance))
+  res <- window_regression_cpp(y_list, x, radius, min_cells, min_variance)
 
   if (single)
     return(list(intercept   = res$intercept[[1L]],
@@ -101,11 +102,27 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
 # A single finite, non-negative whole number, coerced to integer. `radius` and
 # `min_cells` reach the C++ engine's window bounds and valid-cell threshold
 # unchecked otherwise; a negative radius there indexes the summed-area table out of
-# bounds and crashes the R session rather than erroring.
+# bounds and crashes the R session rather than erroring. The upper bound matters as
+# much as the lower one: a value above `.Machine$integer.max` still passes a
+# "non-negative whole number" test but silently becomes `NA` on `as.integer()`,
+# which reaches the C++ engine as `INT_MIN` and crashes the session the same way.
 check_count <- function(x, argument) {
-  ok <- is.numeric(x) && length(x) == 1L && is.finite(x) && x >= 0 && x == round(x)
+  ok <- is.numeric(x) && length(x) == 1L && is.finite(x) && x >= 0 && x == round(x) &&
+    x <= .Machine$integer.max
   if (!ok)
-    stop(sprintf("`%s` must be a single non-negative whole number, not %s",
-                 argument, paste(deparse(x), collapse = " ")))
+    stop(sprintf("`%s` must be a single non-negative whole number no larger than %s, not %s",
+                 argument, .Machine$integer.max, paste(deparse(x), collapse = " ")))
   as.integer(x)
+}
+
+# A single finite, non-negative number. `min_variance` reaches the C++ engine's
+# no-spread guard unchecked otherwise; `NA` or a negative value compares as false
+# against any window variance, silently disabling the guard rather than rejecting a
+# degenerate predictor as documented.
+check_nonneg <- function(x, argument) {
+  ok <- is.numeric(x) && length(x) == 1L && is.finite(x) && x >= 0
+  if (!ok)
+    stop(sprintf("`%s` must be a single non-negative number, not %s",
+                 argument, paste(deparse(x), collapse = " ")))
+  as.numeric(x)
 }

@@ -25,7 +25,13 @@
   and `onto` already did, instead of only a `SpatRaster` (#5).
 * `radius` and `min_cells` are validated as non-negative whole numbers before
   reaching the C++ engine. A negative `radius` previously indexed the summed-area
-  table out of bounds and crashed the R session rather than erroring (#4).
+  table out of bounds and crashed the R session rather than erroring (#4); the same
+  validation now also rejects a value too large for a 32-bit integer, which
+  previously overflowed to `NA` on coercion and crashed the session the same way (#9).
+* `min_variance` is validated as a non-negative number. `NA` or a negative value
+  previously compared as false against every window variance, silently disabling
+  the documented guard against a predictor with no spread instead of being
+  rejected (#10).
 * `window_regression()` rejects a partially-named list of responses instead of
   silently making the unnamed ones' results unreachable by name (#6).
 

@@ -8,34 +8,32 @@ require_pkg <- function(pkg, what) {
     stop(sprintf("package '%s' is required for %s but is not installed.", pkg, what))
 }
 
+# The class token a gridded input's own class maps to, or NA for a non-grid input.
+# The single place that knows which classes are grids, shared by as_grid() and
+# as_target() so a class added to one is not forgotten in the other.
+grid_class_of <- function(x) {
+  if (inherits(x, "SpatRaster")) return("terra")
+  if (inherits(x, c("RasterLayer", "RasterBrick", "RasterStack"))) return("raster")
+  if (inherits(x, "stars")) return("stars")
+  NA_character_
+}
+
 # Coerce a coarse gridded input to a SpatRaster. `data` is always a grid.
 as_grid <- function(x, argument) {
-  if (inherits(x, "SpatRaster")) return(x)
-  if (inherits(x, c("RasterLayer", "RasterBrick", "RasterStack"))) {
-    require_pkg("raster", "Raster* input")
-    return(terra::rast(x))
-  }
-  if (inherits(x, "stars")) {
-    require_pkg("stars", "stars input")
-    return(terra::rast(x))
-  }
-  stop(sprintf("`%s` must be a SpatRaster, Raster* (raster), or stars object.", argument))
+  switch(grid_class_of(x),
+    terra  = x,
+    raster = { require_pkg("raster", "Raster* input"); terra::rast(x) },
+    stars  = { require_pkg("stars", "stars input"); terra::rast(x) },
+    stop(sprintf("`%s` must be a SpatRaster, Raster* (raster), or stars object.", argument)))
 }
 
 # Describe the target `onto` as either a grid (its geometry defines the output
 # raster) or a set of point geometries (the fit is evaluated at each point). The
 # original object and a class token are kept so the result can be returned in kind.
 as_target <- function(onto) {
-  if (inherits(onto, "SpatRaster"))
-    return(list(kind = "grid", grid = onto, class = "terra"))
-  if (inherits(onto, c("RasterLayer", "RasterBrick", "RasterStack"))) {
-    require_pkg("raster", "Raster* input")
-    return(list(kind = "grid", grid = terra::rast(onto), class = "raster"))
-  }
-  if (inherits(onto, "stars")) {
-    require_pkg("stars", "stars input")
-    return(list(kind = "grid", grid = terra::rast(onto), class = "stars"))
-  }
+  class_token <- grid_class_of(onto)
+  if (!is.na(class_token))
+    return(list(kind = "grid", grid = as_grid(onto, "onto"), class = class_token))
   if (inherits(onto, "sf")) {
     require_pkg("sf", "sf input")
     vect <- terra::vect(onto)

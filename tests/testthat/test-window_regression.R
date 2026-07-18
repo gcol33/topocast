@@ -144,6 +144,44 @@ test_that("radius and min_cells are validated as non-negative whole numbers (iss
                window_regression(climate, elevation, radius = 3L))
 })
 
+test_that("a radius/min_cells above .Machine$integer.max errors instead of crashing (issue #9)", {
+  set.seed(24)
+  elevation <- matrix(runif(100, 0, 2000), 10, 10)
+  climate <- 30 - 0.006 * elevation
+
+  # a radius/min_cells too large for a 32-bit int previously overflowed to NA on
+  # as.integer() and crashed the R session; it must now be a clean error.
+  expect_error(window_regression(climate, elevation, radius = 3e9), "non-negative whole number")
+  expect_error(window_regression(climate, elevation, radius = 3, min_cells = 3e9),
+               "non-negative whole number")
+
+  # one past the boundary is still rejected; .Machine$integer.max itself is a
+  # valid (if impractical) radius and is not exercised here.
+  expect_error(window_regression(climate, elevation, radius = .Machine$integer.max + 1),
+               "non-negative whole number")
+})
+
+test_that("min_variance is validated as a non-negative number (issue #10)", {
+  set.seed(26)
+  flat <- matrix(1500, 8, 8)
+  climate <- matrix(rnorm(64, 10, 1), 8, 8)
+
+  # NA/negative min_variance previously compared as false against every window
+  # variance, silently disabling the no-spread guard instead of rejecting it.
+  expect_error(window_regression(climate, flat, radius = 3, min_variance = NA),
+               "non-negative number")
+  expect_error(window_regression(climate, flat, radius = 3, min_variance = -1),
+               "non-negative number")
+  expect_error(window_regression(climate, flat, radius = 3, min_variance = c(1e-8, 2e-8)),
+               "non-negative number")
+
+  # the guard still holds at the default: a flat predictor yields NA, not a
+  # plausible-looking coefficient from a singular design.
+  fit <- window_regression(climate, flat, radius = 3)
+  expect_true(all(is.na(fit$slope[[1]])))
+  expect_true(all(is.na(fit$intercept)))
+})
+
 test_that("a partially-named response list is rejected rather than losing a result (issue #6)", {
   set.seed(25)
   elevation <- matrix(runif(100, 0, 2000), 10, 10)
