@@ -74,7 +74,29 @@ harmonize_target_crs <- function(data, target) {
 bring_onto_target <- function(coarse, target, method) {
   if (target$kind == "grid")
     return(terra::resample(coarse, target$grid[[1]], method = method))
-  terra::extract(coarse, target$vect, method = "bilinear", ID = FALSE)
+  terra::extract(coarse, target$vect, method = method, ID = FALSE)
+}
+
+# Resolve `method` against the target kind. `NULL` takes a kind-appropriate
+# default: `"cubicspline"` for a grid target, resampled with terra::resample();
+# `"bilinear"` for a point target, interpolated with terra::extract(). An
+# explicit point-target method is validated against what terra::extract()
+# actually supports, a smaller set than the resampling methods terra::resample()
+# accepts for a grid target, so the same argument cannot drive both paths alike.
+resolve_cast_method <- function(method, target) {
+  if (target$kind == "grid") {
+    if (is.null(method)) return("cubicspline")
+    return(method)
+  }
+  if (is.null(method)) return("bilinear")
+  allowed <- c("simple", "bilinear")
+  if (!method %in% allowed)
+    stop(sprintf(paste0(
+      "`method = \"%s\"` is not supported for a point (sf/SpatVector) `onto` ",
+      "target.\nterra::extract() only supports %s; the resampling methods ",
+      "accepted by terra::resample() (used for a gridded `onto`) do not apply here."),
+      method, paste(sprintf('"%s"', allowed), collapse = ", ")))
+  method
 }
 
 # Collapse a single-layer bring to a plain value: a one-layer SpatRaster (grid) or

@@ -178,6 +178,27 @@ test_that("a point onto missing a predictor attribute is a clear error", {
                "predictor attribute")
 })
 
+test_that("method is validated (not silently ignored) for a point onto target (issue #20)", {
+  skip_if_not_installed("terra")
+  skip_if_not_installed("sf")
+  grids <- make_io_grids()
+  pts <- make_io_points(grids$terrain)
+
+  # "simple" is honoured (nearest-cell extract), not silently treated as bilinear:
+  # the coefficient grids are exact linear (intercept 800, slope -0.1 everywhere),
+  # so both methods predict identically here, but the call must at least succeed.
+  out_simple <- topocast(prec ~ elev, data = grids$data, onto = pts, radius = 4,
+                         method = "simple")
+  expect_s3_class(out_simple, "sf")
+  expect_equal(out_simple$prec, 800 - 0.1 * pts$elev, tolerance = 1e-6)
+
+  # A resample-only method (the grid-target default) is rejected for a point target
+  # instead of silently behaving like bilinear.
+  expect_error(
+    topocast(prec ~ elev, data = grids$data, onto = pts, radius = 4, method = "cubicspline"),
+    "not supported for a point")
+})
+
 test_that("a non-spatial onto is rejected", {
   skip_if_not_installed("terra")
   grids <- make_io_grids()

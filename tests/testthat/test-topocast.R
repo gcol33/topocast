@@ -237,6 +237,54 @@ test_that("a multi-period anomaly returns one layer per period, named", {
   expect_equal(names(out), c("dry", "wet"))
 })
 
+test_that("cbind() with a duplicate response name errors at the formula parser (issue #19)", {
+  expect_error(
+    topocast:::parse_topo_formula(cbind(prec, prec) ~ elev),
+    "names `prec` more than once")
+})
+
+test_that("a duplicate cbind() response name errors from topocast(), not window_regression() (issue #19)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  expect_error(
+    topocast(cbind(prec, prec) ~ elev, data = grids$data, onto = grids$terrain, radius = 3),
+    "names `prec` more than once")
+})
+
+test_that("anomaly and baseline are CRS-harmonized against data, like onto (issue #18)", {
+  skip_if_not_installed("terra")
+  grids <- make_grids()
+  baseline_out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+                           radius = 3, anomaly = grids$data[["prec"]], type = "ratio")
+
+  # Same EPSG code via an alternate WKT (cosmetic name change only): accepted,
+  # and produces the same result.
+  alt_anomaly <- grids$data[["prec"]]
+  alt_wkt <- sub('"WGS 84 / UTM zone 32N"', '"WGS 84 / UTM zone 32N (alt)"',
+                terra::crs(alt_anomaly), fixed = TRUE)
+  terra::crs(alt_anomaly) <- alt_wkt
+  out <- topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+                  radius = 3, anomaly = alt_anomaly, type = "ratio")
+  expect_equal(terra::values(out), terra::values(baseline_out), tolerance = 1e-9)
+
+  # A genuine CRS mismatch on anomaly errors, the same way a mismatched onto does (issue #3).
+  mismatched_anomaly <- grids$data[["prec"]]
+  terra::crs(mismatched_anomaly) <- "EPSG:3857"
+  expect_error(
+    topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+             radius = 3, anomaly = mismatched_anomaly, type = "ratio"),
+    "do not share a coordinate reference system")
+
+  # A genuine CRS mismatch on a user-supplied baseline errors too.
+  mismatched_baseline <- grids$data[["prec"]]
+  terra::crs(mismatched_baseline) <- "EPSG:3857"
+  expect_error(
+    topocast(prec ~ elev + slope, data = grids$data, onto = grids$terrain,
+             radius = 3, anomaly = grids$data[["prec"]], baseline = mismatched_baseline,
+             type = "ratio"),
+    "do not share a coordinate reference system")
+})
+
 test_that("the ratio path guards a zero baseline", {
   skip_if_not_installed("terra")
   grids <- make_grids()

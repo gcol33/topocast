@@ -83,8 +83,13 @@
 #'   `anomaly` is `NULL`.
 #' @param type `"ratio"` (multiplicative) or `"additive"`; used only with
 #'   `anomaly`.
-#' @param method Resampling method for the coefficient grids, passed to
-#'   [terra::resample()]. Default `"cubicspline"`.
+#' @param method Interpolation method for bringing the coefficient grids onto
+#'   `onto`. For a grid `onto`, passed to [terra::resample()]; default
+#'   `"cubicspline"`. For a point (sf/SpatVector) `onto`, passed to
+#'   [terra::extract()], which only supports `"simple"` and `"bilinear"`;
+#'   default `"bilinear"`. Default `NULL` uses the kind-appropriate default;
+#'   an explicit value that `terra::extract()` does not support is an error
+#'   for a point target.
 #' @param output Optional output class, one of `"terra"`, `"raster"`, `"stars"`
 #'   (grid targets) or `"terra"`, `"sf"`, `"spatvector"`, `"data.frame"` (point
 #'   targets). Default `NULL` returns the result in the class of `onto`.
@@ -157,7 +162,7 @@
 topocast <- function(formula, data, onto, radius,
                      aggregate = "average", coefficients = FALSE, diagnostics = FALSE,
                      anomaly = NULL, baseline = NULL, type = c("ratio", "additive"),
-                     method = "cubicspline", output = NULL, clamp = FALSE,
+                     method = NULL, output = NULL, clamp = FALSE,
                      min_cells = 0L, min_variance = 1e-8) {
   type <- match.arg(type)
   parsed <- parse_topo_formula(formula)
@@ -173,6 +178,7 @@ topocast <- function(formula, data, onto, radius,
   data   <- as_grid(data, "data")
   target <- as_target(onto)
   target <- harmonize_target_crs(data, target)
+  method <- resolve_cast_method(method, target)
 
   onto_grid <- if (target$kind == "grid") target$grid else NULL
   fit <- fit_windows(parsed, data, onto_grid, radius = radius, aggregate = aggregate,
@@ -197,13 +203,13 @@ topocast <- function(formula, data, onto, radius,
     return(finalize(target, cols, output))
   }
 
-  anomaly <- as_grid(anomaly, "anomaly")
+  anomaly <- harmonize_crs(data, as_grid(anomaly, "anomaly"))
   rfit   <- fit$responses[[1L]]
   resp   <- rfit$response
   casted <- cast_onto(rfit, fit$predictors, target, method = method)
   fine_baseline <- casted$fitted
   if (clamp) fine_baseline <- clamp_values(fine_baseline, response_range(data, resp), target)
-  baseline <- if (is.null(baseline)) data[[resp]] else as_grid(baseline, "baseline")
+  baseline <- if (is.null(baseline)) data[[resp]] else harmonize_crs(data, as_grid(baseline, "baseline"))
   cols <- carry_anomalies(fine_baseline, anomaly, baseline, target,
                           type = type, method = method)
   if (diagnostics) {
@@ -267,7 +273,13 @@ parse_response <- function(lhs) {
       stop(paste0("the left-hand side may only use bare layer names; use ",
                   "`cbind(r1, r2)` of bare names for several responses, such as ",
                   "`cbind(prec, tmin) ~ elev`."))
-    return(vapply(args, as.character, character(1)))
+    names <- vapply(args, as.character, character(1))
+    dup <- names[duplicated(names)]
+    if (length(dup))
+      stop(sprintf(paste0(
+        "the left-hand side of `cbind()` names `%s` more than once; ",
+        "each response must have a unique name."), dup[1L]))
+    return(names)
   }
   stop(paste0("the left-hand side of `formula` must be a single bare layer name, ",
               "or `cbind(...)` of bare layer names for several responses."))

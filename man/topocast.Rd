@@ -15,7 +15,7 @@ topocast(
   anomaly = NULL,
   baseline = NULL,
   type = c("ratio", "additive"),
-  method = "cubicspline",
+  method = NULL,
   output = NULL,
   clamp = FALSE,
   min_cells = 0L,
@@ -74,8 +74,13 @@ taken relative to. Defaults to the response layer of \code{data}. Ignored when
 \item{type}{\code{"ratio"} (multiplicative) or \code{"additive"}; used only with
 \code{anomaly}.}
 
-\item{method}{Resampling method for the coefficient grids, passed to
-\code{\link[terra:resample]{terra::resample()}}. Default \code{"cubicspline"}.}
+\item{method}{Interpolation method for bringing the coefficient grids onto
+\code{onto}. For a grid \code{onto}, passed to \code{\link[terra:resample]{terra::resample()}}; default
+\code{"cubicspline"}. For a point (sf/SpatVector) \code{onto}, passed to
+\code{\link[terra:extract]{terra::extract()}}, which only supports \code{"simple"} and \code{"bilinear"};
+default \code{"bilinear"}. Default \code{NULL} uses the kind-appropriate default;
+an explicit value that \code{terra::extract()} does not support is an error
+for a point target.}
 
 \item{output}{Optional output class, one of \code{"terra"}, \code{"raster"}, \code{"stars"}
 (grid targets) or \code{"terra"}, \code{"sf"}, \code{"spatvector"}, \code{"data.frame"} (point
