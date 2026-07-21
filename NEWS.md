@@ -1,10 +1,20 @@
 # topocast 0.0.5
 
-* The moving-window fitting loop now runs on two threads while a package check is
-  running, which R signals by setting `_R_CHECK_LIMIT_CORES_`, and on every
-  available core otherwise. A check environment allows a package two cores, so the
-  loop's previous fan-out over the whole machine spent more CPU time than the
-  elapsed time a check budgets for it.
+* `topocast()` and `window_regression()` gain a `threads` argument, the number of
+  threads the fitting loop may use, defaulting to every available core as before.
+  The fitting loop previously took every core with no per-call way to ask for
+  fewer, since the only control was `OMP_NUM_THREADS`, which the OpenMP runtime
+  reads once at start-up. A caller fitting many targets by parallelising at the R
+  level therefore got a full thread team in each worker, W x C threads for W
+  workers on C cores; such a caller can now pass `threads = 1` and own the cores
+  itself. The threads buy little on their own -- 24 of them fit a 121 x 146 grid
+  with 19 responses about 1.5 times as fast as one -- so more workers at one thread
+  each is generally the better use of a machine (#36).
+* A request above the number of cores the OpenMP runtime offers is clamped to that
+  number, and every request is clamped to two while a package check is running,
+  which R signals by setting `_R_CHECK_LIMIT_CORES_`. A check environment allows a
+  package two cores, so the loop's previous fan-out over the whole machine spent
+  more CPU time than the elapsed time a check budgets for it.
 
 # topocast 0.0.4
 

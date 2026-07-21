@@ -4,7 +4,14 @@
 \alias{window_regression}
 \title{Moving-window linear regression over raster matrices}
 \usage{
-window_regression(y, x, radius, min_cells = 0L, min_variance = 1e-08)
+window_regression(
+  y,
+  x,
+  radius,
+  min_cells = 0L,
+  min_variance = 1e-08,
+  threads = NULL
+)
 }
 \arguments{
 \item{y}{Numeric matrix, the response on the coarse grid, or a list of numeric
@@ -22,6 +29,16 @@ the \code{k + 1} model terms (\code{k} predictors plus the intercept). Default \
 
 \item{min_variance}{Numeric, the minimum within-window variance a predictor
 must have for the cell to be fit. Default \code{1e-8}.}
+
+\item{threads}{Integer, the number of threads the fitting loop may use, or
+\code{NULL} (the default) for every core available. A request above the number of
+cores the OpenMP runtime offers is clamped to that number, and every request
+is clamped to two while a package check is running. Set \code{threads = 1} when
+calling from inside a worker that is itself parallelised over targets, so the
+workers do not each spawn a full thread team; the fit is a small share of a
+call, so more workers at one thread each generally use the cores better than
+one worker at many. Without OpenMP the fit is single-threaded and this
+argument has no effect.}
 }
 \value{
 A list with \code{intercept} (a numeric matrix), \code{slope} (a list of numeric

@@ -12,8 +12,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // window_regression_cpp
-List window_regression_cpp(const List& Ylist, const List& Xlist, int radius, int min_cells, double min_variance);
-RcppExport SEXP _topocast_window_regression_cpp(SEXP YlistSEXP, SEXP XlistSEXP, SEXP radiusSEXP, SEXP min_cellsSEXP, SEXP min_varianceSEXP) {
+List window_regression_cpp(const List& Ylist, const List& Xlist, int radius, int min_cells, double min_variance, int threads);
+RcppExport SEXP _topocast_window_regression_cpp(SEXP YlistSEXP, SEXP XlistSEXP, SEXP radiusSEXP, SEXP min_cellsSEXP, SEXP min_varianceSEXP, SEXP threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -22,13 +22,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type radius(radiusSEXP);
     Rcpp::traits::input_parameter< int >::type min_cells(min_cellsSEXP);
     Rcpp::traits::input_parameter< double >::type min_variance(min_varianceSEXP);
-    rcpp_result_gen = Rcpp::wrap(window_regression_cpp(Ylist, Xlist, radius, min_cells, min_variance));
+    Rcpp::traits::input_parameter< int >::type threads(threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(window_regression_cpp(Ylist, Xlist, radius, min_cells, min_variance, threads));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_topocast_window_regression_cpp", (DL_FUNC) &_topocast_window_regression_cpp, 5},
+    {"_topocast_window_regression_cpp", (DL_FUNC) &_topocast_window_regression_cpp, 6},
     {NULL, NULL, 0}
 };
 

@@ -30,6 +30,15 @@
 #'   the `k + 1` model terms (`k` predictors plus the intercept). Default `0`.
 #' @param min_variance Numeric, the minimum within-window variance a predictor
 #'   must have for the cell to be fit. Default `1e-8`.
+#' @param threads Integer, the number of threads the fitting loop may use, or
+#'   `NULL` (the default) for every core available. A request above the number of
+#'   cores the OpenMP runtime offers is clamped to that number, and every request
+#'   is clamped to two while a package check is running. Set `threads = 1` when
+#'   calling from inside a worker that is itself parallelised over targets, so the
+#'   workers do not each spawn a full thread team; the fit is a small share of a
+#'   call, so more workers at one thread each generally use the cores better than
+#'   one worker at many. Without OpenMP the fit is single-threaded and this
+#'   argument has no effect.
 #'
 #' @return A list with `intercept` (a numeric matrix), `slope` (a list of numeric
 #'   matrices, one per predictor), `r_squared` (a numeric matrix), `residual_sd` (a
@@ -57,7 +66,8 @@
 #' names(both$slope)
 #'
 #' @export
-window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8) {
+window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8,
+                              threads = NULL) {
   if (is.matrix(x)) x <- list(x)
   if (!is.list(x) || length(x) < 1L)
     stop("`x` must be a matrix or a list of matrices")
@@ -91,6 +101,7 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
   radius       <- check_count(radius, "radius")
   min_cells    <- check_count(min_cells, "min_cells")
   min_variance <- check_nonneg(min_variance, "min_variance")
+  threads      <- check_threads(threads, "threads")
 
   # A radius of 0 gives a window of exactly one cell, which can never hold the
   # k + 1 valid cells a fit with k predictors needs (k >= 1 is already required
@@ -110,7 +121,7 @@ window_regression <- function(y, x, radius, min_cells = 0L, min_variance = 1e-8)
   radius <- min(radius, grid_span)
 
   res <- tryCatch(
-    window_regression_cpp(y_list, x, radius, min_cells, min_variance),
+    window_regression_cpp(y_list, x, radius, min_cells, min_variance, threads),
     error = function(e) {
       # Translate the C++ engine's generic message into one that names the
       # actual R arguments, rather than letting the raw C++ text through.
@@ -149,6 +160,22 @@ check_count <- function(x, argument) {
   if (!ok)
     stop(sprintf("`%s` must be a single non-negative whole number no larger than %s, not %s",
                  argument, .Machine$integer.max, paste(deparse(x), collapse = " ")))
+  as.integer(x)
+}
+
+# A thread count of at least 1, or NULL for every available core, coerced to the
+# integer the C++ engine reads, where 0 carries the "every available core" request.
+# A negative or NA value would otherwise reach the num_threads clause and request a
+# nonsensical team size.
+check_threads <- function(x, argument) {
+  if (is.null(x)) return(0L)
+  ok <- is.numeric(x) && length(x) == 1L && is.finite(x) && x >= 1 && x == round(x) &&
+    x <= .Machine$integer.max
+  if (!ok)
+    stop(sprintf(paste0(
+      "`%s` must be a single whole number of at least 1, or NULL to use every ",
+      "available core, not %s"),
+      argument, paste(deparse(x), collapse = " ")))
   as.integer(x)
 }
 

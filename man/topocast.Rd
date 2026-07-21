@@ -19,7 +19,8 @@ topocast(
   output = NULL,
   clamp = FALSE,
   min_cells = 0L,
-  min_variance = 1e-08
+  min_variance = 1e-08,
+  threads = NULL
 )
 }
 \arguments{
@@ -95,7 +96,9 @@ coarse response, a guard against the local linear fit extrapolating without
 limit where a fine predictor lies outside the range it was fit on. Default
 \code{FALSE}.}
 
-\item{min_cells, min_variance}{Passed to \code{\link[=window_regression]{window_regression()}}.}
+\item{min_cells, min_variance, threads}{Passed to \code{\link[=window_regression]{window_regression()}}. Set
+\code{threads = 1} when calling from inside a worker that is itself parallelised
+over targets, so the workers do not each spawn a full thread team.}
 }
 \value{
 The downscaled result on the geometry of \code{onto}, in the class of \code{onto}

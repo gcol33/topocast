@@ -24,16 +24,20 @@
 
 using namespace Rcpp;
 
-// The number of threads the fitting loop below may use. A package is allowed two
-// cores while its checks run, which R signals by setting _R_CHECK_LIMIT_CORES_;
-// every other run gets the whole machine.
-static inline int fit_threads() {
+// The number of threads the fitting loop below may use. `requested` is the caller's
+// thread count, or 0 to ask for every core available. The request is clamped to the
+// cores the OpenMP runtime offers, since a team larger than that only oversubscribes
+// them, and then to two while a package check is running, which R signals by setting
+// _R_CHECK_LIMIT_CORES_.
+static inline int fit_threads(int requested) {
 #ifdef _OPENMP
-  const char* limit_cores = std::getenv("_R_CHECK_LIMIT_CORES_");
   const int available = omp_get_max_threads();
-  if (limit_cores != nullptr && limit_cores[0] != '\0') return std::min(2, available);
-  return available;
+  int n = (requested > 0) ? std::min(requested, available) : available;
+  const char* limit_cores = std::getenv("_R_CHECK_LIMIT_CORES_");
+  if (limit_cores != nullptr && limit_cores[0] != '\0') n = std::min(n, 2);
+  return std::max(1, n);
 #else
+  (void)requested;
   return 1;
 #endif
 }
@@ -156,7 +160,7 @@ static inline double window_sum(const IntegralImage& ii,
 //
 // [[Rcpp::export]]
 List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
-                           int min_cells, double min_variance) {
+                           int min_cells, double min_variance, int threads) {
   const int k = Xlist.size();
   if (k < 1) stop("at least one predictor is required");
   const int R = Ylist.size();
@@ -258,7 +262,7 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
   // boundary is a safe place to call Rcpp::checkUserInterrupt(), which touches the
   // R API and so cannot be called from inside the OpenMP region itself.
   const idx_t chunk_rows = 256;
-  const int n_threads = fit_threads();
+  const int n_threads = fit_threads(threads);
   for (idx_t row_start = 0; row_start < nrows; row_start += chunk_rows) {
     Rcpp::checkUserInterrupt();
     const idx_t row_end = std::min(nrows, row_start + chunk_rows);

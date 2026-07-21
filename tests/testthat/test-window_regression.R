@@ -332,3 +332,38 @@ test_that("the engine matches the brute-force oracle with three predictors (issu
   expect_equal(fit$slope[[2]], ref$slope[[2]], tolerance = 1e-5)
   expect_equal(fit$slope[[3]], ref$slope[[3]], tolerance = 1e-5)
 })
+
+test_that("threads is validated as a whole number of at least 1, or NULL (issue #36)", {
+  set.seed(36)
+  elevation <- matrix(runif(64, 0, 2000), 8, 8)
+  climate <- 50 + 0.01 * elevation
+
+  expect_error(window_regression(climate, elevation, radius = 3, threads = 0),
+               "at least 1")
+  expect_error(window_regression(climate, elevation, radius = 3, threads = -1),
+               "at least 1")
+  expect_error(window_regression(climate, elevation, radius = 3, threads = NA),
+               "at least 1")
+  expect_error(window_regression(climate, elevation, radius = 3, threads = 1.5),
+               "at least 1")
+  expect_error(window_regression(climate, elevation, radius = 3, threads = c(1, 2)),
+               "at least 1")
+
+  # a request beyond the available cores is clamped rather than rejected.
+  expect_silent(window_regression(climate, elevation, radius = 3, threads = 1024))
+})
+
+test_that("the fit does not depend on the thread count (issue #36)", {
+  set.seed(37)
+  # Larger than the 256-row chunk the engine parallelises within, so more than one
+  # thread genuinely shares the work.
+  elevation <- matrix(runif(300 * 40, 0, 2000), 300, 40)
+  climate <- 800 - 0.1 * elevation + matrix(rnorm(300 * 40, 0, 5), 300, 40)
+
+  serial <- window_regression(climate, elevation, radius = 5, threads = 1)
+  two    <- window_regression(climate, elevation, radius = 5, threads = 2)
+  every  <- window_regression(climate, elevation, radius = 5, threads = NULL)
+
+  expect_identical(serial, two)
+  expect_identical(serial, every)
+})

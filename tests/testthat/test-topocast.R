@@ -444,3 +444,22 @@ test_that("a predictor present in both data and onto is fit from data's coarse l
   expect_equal(terra::values(coef_normal[["(Intercept)"]]), terra::values(coef_perturbed[["(Intercept)"]]),
                tolerance = 1e-9)
 })
+
+test_that("topocast() passes threads down and the result does not depend on it (issue #36)", {
+  set.seed(36)
+  coarse <- terra::rast(nrows = 40, ncols = 40, xmin = 0, xmax = 40, ymin = 0, ymax = 40,
+                        crs = "EPSG:32632")
+  elevation <- terra::setValues(coarse, runif(terra::ncell(coarse), 0, 2000))
+  precipitation <- 800 - 0.1 * elevation
+  data <- c(precipitation, elevation)
+  names(data) <- c("prec", "elev")
+  terrain <- terra::disagg(elevation, fact = 2, method = "bilinear")
+  names(terrain) <- "elev"
+
+  serial <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4, threads = 1)
+  every  <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4, threads = NULL)
+  expect_equal(terra::values(serial), terra::values(every))
+
+  expect_error(topocast(prec ~ elev, data = data, onto = terrain, radius = 4, threads = 0),
+               "at least 1")
+})

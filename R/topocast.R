@@ -109,7 +109,9 @@
 #'   coarse response, a guard against the local linear fit extrapolating without
 #'   limit where a fine predictor lies outside the range it was fit on. Default
 #'   `FALSE`.
-#' @param min_cells,min_variance Passed to [window_regression()].
+#' @param min_cells,min_variance,threads Passed to [window_regression()]. Set
+#'   `threads = 1` when calling from inside a worker that is itself parallelised
+#'   over targets, so the workers do not each spawn a full thread team.
 #'
 #' @return The downscaled result on the geometry of `onto`, in the class of `onto`
 #'   or the class named by `output`. For a grid target: a single layer named for
@@ -175,7 +177,7 @@ topocast <- function(formula, data, onto, radius,
                      aggregate = "average", coefficients = FALSE, diagnostics = FALSE,
                      anomaly = NULL, baseline = NULL, type = c("ratio", "additive"),
                      method = NULL, output = NULL, clamp = FALSE,
-                     min_cells = 0L, min_variance = 1e-8) {
+                     min_cells = 0L, min_variance = 1e-8, threads = NULL) {
   type <- match.arg(type)
   parsed <- parse_topo_formula(formula)
   multi  <- length(parsed$response) > 1L
@@ -195,7 +197,8 @@ topocast <- function(formula, data, onto, radius,
 
   onto_grid <- if (target$kind == "grid") target$grid else NULL
   fit <- fit_windows(parsed, data, onto_grid, radius = radius, aggregate = aggregate,
-                     min_cells = min_cells, min_variance = min_variance)
+                     min_cells = min_cells, min_variance = min_variance,
+                     threads = threads)
 
   # Every coarse grid the fit produced -- each response's coefficients and
   # diagnostics, plus the shared valid-cell count -- travels onto the target in a
@@ -444,7 +447,8 @@ bundle_layout <- function(responses, predictors) {
 # layout, and every coarse grid stacked into one SpatRaster: assembling them as a
 # single multi-layer object costs one terra construction instead of one per
 # coefficient, and lets the whole fit reach the target in one resample/extract.
-fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, min_variance) {
+fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, min_variance,
+                        threads) {
   response_raster  <- select_layers(data, parsed$response, "data")
   template         <- response_raster[[1L]]
   predictor_raster <- resolve_predictors(parsed$predictors, data, onto_grid,
@@ -455,7 +459,7 @@ fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, m
   regression <- tryCatch(
     window_regression(response_matrices, predictor_matrices,
                       radius = radius, min_cells = min_cells,
-                      min_variance = min_variance),
+                      min_variance = min_variance, threads = threads),
     error = function(e) {
       if (grepl("nothing to regress", conditionMessage(e), fixed = TRUE))
         stop("the coarse response and predictor layers (from `data`, and any ",
