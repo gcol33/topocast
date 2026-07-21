@@ -8,7 +8,7 @@
 [![Lifecycle:
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![License:
-MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
 [![R-CMD-check](https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 

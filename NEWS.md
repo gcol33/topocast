@@ -1,3 +1,11 @@
+# topocast 0.0.5
+
+* The moving-window fitting loop now runs on two threads while a package check is
+  running, which R signals by setting `_R_CHECK_LIMIT_CORES_`, and on every
+  available core otherwise. A check environment allows a package two cores, so the
+  loop's previous fan-out over the whole machine spent more CPU time than the
+  elapsed time a check budgets for it.
+
 # topocast 0.0.4
 
 * `topocast()` now brings every coarse grid a call fits -- each response's

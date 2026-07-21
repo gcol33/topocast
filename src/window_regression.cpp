@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 #ifdef _OPENMP
@@ -22,6 +23,20 @@
 // [[Rcpp::depends(RcppArmadillo)]]
 
 using namespace Rcpp;
+
+// The number of threads the fitting loop below may use. A package is allowed two
+// cores while its checks run, which R signals by setting _R_CHECK_LIMIT_CORES_;
+// every other run gets the whole machine.
+static inline int fit_threads() {
+#ifdef _OPENMP
+  const char* limit_cores = std::getenv("_R_CHECK_LIMIT_CORES_");
+  const int available = omp_get_max_threads();
+  if (limit_cores != nullptr && limit_cores[0] != '\0') return std::min(2, available);
+  return available;
+#else
+  return 1;
+#endif
+}
 
 // A signed 64-bit index for the row/column arithmetic in the fitting loop below.
 // `row +/- radius` is computed in this type rather than `int`, so a grid whose
@@ -243,12 +258,13 @@ List window_regression_cpp(const List& Ylist, const List& Xlist, int radius,
   // boundary is a safe place to call Rcpp::checkUserInterrupt(), which touches the
   // R API and so cannot be called from inside the OpenMP region itself.
   const idx_t chunk_rows = 256;
+  const int n_threads = fit_threads();
   for (idx_t row_start = 0; row_start < nrows; row_start += chunk_rows) {
     Rcpp::checkUserInterrupt();
     const idx_t row_end = std::min(nrows, row_start + chunk_rows);
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) num_threads(n_threads)
 #endif
     for (idx_t row = row_start; row < row_end; ++row) {
       const idx_t r0 = std::max((idx_t)0, row - idx_radius);
