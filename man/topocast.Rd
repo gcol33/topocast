@@ -136,7 +136,12 @@ Several responses that share the predictors are downscaled together by naming
 them as \code{cbind(prec, tmin) ~ elev}. The moving-window design depends only on the
 predictors, so it is fit once and solved against every response; the result has
 one layer (or column) per response. With \code{coefficients} or \code{diagnostics}, the
-extra grids are prefixed by the response name.
+extra grids are prefixed by the response name. The setup a call does around the
+fit is shared the same way: the coefficient grids reach \code{onto} in one
+resampling step and the \code{onto} predictors are read once for the call. Responses
+on one coarse grid sharing one \code{onto}, such as several climate scenarios
+downscaled onto the same range, therefore cost less named together in one call
+than split across several.
 
 For a time series, supply \code{anomaly}: a stack of coarse periods. The baseline
 relationship is fit once and each period's coarse anomaly, relative to

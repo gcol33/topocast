@@ -109,10 +109,6 @@ resolve_cast_method <- function(method, target) {
   method
 }
 
-# Collapse a single-layer bring to a plain value: a one-layer SpatRaster (grid) or
-# a numeric vector (points), so anomaly arithmetic is the same for both.
-as_value <- function(x) if (inherits(x, "data.frame")) x[[1L]] else x
-
 # The fine predictors named in the formula: layers of the grid target, or
 # attribute columns of the point target. Both are indexed by name downstream.
 target_predictors <- function(target, predictors) {
@@ -126,6 +122,15 @@ target_predictors <- function(target, predictors) {
       "`formula`: %s.\nAvailable attributes: %s"),
       paste(missing, collapse = ", "), paste(names(values), collapse = ", ")))
   values
+}
+
+# The fine predictor values as a list keyed by predictor name, resolved once per
+# call: every response evaluates against the same predictors, so pulling them per
+# response repeated the whole target-side lookup (a grid subset, or materialising
+# the point target's attribute table) for each one.
+target_predictor_values <- function(target, predictors) {
+  values <- target_predictors(target, predictors)
+  stats::setNames(lapply(predictors, function(p) values[[p]]), predictors)
 }
 
 # fitted = intercept + sum_j slope_j * predictor_j. Works on SpatRaster layers and
@@ -183,10 +188,14 @@ clamp_count <- function(x, max_value) {
   pmin(pmax(x, 0), max_value)
 }
 
-# The observed range of a coarse response layer, the bounds the downscaled field is
-# clamped to when `clamp = TRUE`.
-response_range <- function(data, response) {
-  range(terra::values(data[[response]]), na.rm = TRUE)
+# The observed range of each coarse response layer, the bounds the downscaled field
+# is clamped to when `clamp = TRUE`, read in one values() trip for every response.
+# Computed only when `clamp = TRUE`, so an all-NA response layer still raises
+# range()'s no-non-missing-arguments warning exactly when the clamp would use it.
+response_ranges <- function(data, responses) {
+  values <- terra::values(select_layers(data, responses, "data"))
+  stats::setNames(lapply(seq_along(responses),
+                         function(i) range(values[, i], na.rm = TRUE)), responses)
 }
 
 # Prefix a named list of columns with `<response>.`, so several responses' coefficient

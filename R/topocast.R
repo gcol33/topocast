@@ -26,7 +26,12 @@
 #' them as `cbind(prec, tmin) ~ elev`. The moving-window design depends only on the
 #' predictors, so it is fit once and solved against every response; the result has
 #' one layer (or column) per response. With `coefficients` or `diagnostics`, the
-#' extra grids are prefixed by the response name.
+#' extra grids are prefixed by the response name. The setup a call does around the
+#' fit is shared the same way: the coefficient grids reach `onto` in one
+#' resampling step and the `onto` predictors are read once for the call. Responses
+#' on one coarse grid sharing one `onto`, such as several climate scenarios
+#' downscaled onto the same range, therefore cost less named together in one call
+#' than split across several.
 #'
 #' For a time series, supply `anomaly`: a stack of coarse periods. The baseline
 #' relationship is fit once and each period's coarse anomaly, relative to
@@ -186,18 +191,29 @@ topocast <- function(formula, data, onto, radius,
   target <- as_target(onto)
   target <- harmonize_target_crs(data, target)
   method <- resolve_cast_method(method, target)
+  if (!is.null(anomaly)) anomaly <- harmonize_crs(data, as_grid(anomaly, "anomaly"))
 
   onto_grid <- if (target$kind == "grid") target$grid else NULL
   fit <- fit_windows(parsed, data, onto_grid, radius = radius, aggregate = aggregate,
                      min_cells = min_cells, min_variance = min_variance)
 
+  # Every coarse grid the fit produced -- each response's coefficients and
+  # diagnostics, plus the shared valid-cell count -- travels onto the target in a
+  # single resample/extract, and the target predictors and response ranges are
+  # each resolved once. None of the three depends on which response is being
+  # evaluated, so doing them per response repeated the whole coarse-to-target trip
+  # once for every response in the call.
+  bundle <- bring_onto_target(fit$coarse, target, method)
+  predictor_values <- target_predictor_values(target, fit$predictors)
+  ranges <- if (clamp) response_ranges(data, fit$responses) else NULL
+
   if (is.null(anomaly)) {
     cols <- list()
-    for (rfit in fit$responses) {
-      resp   <- rfit$response
-      casted <- cast_onto(rfit, fit$predictors, target, method = method)
+    for (resp in fit$responses) {
+      casted <- cast_response(bundle, fit$layout$responses[[resp]], fit$predictors,
+                              predictor_values)
       fitted <- casted$fitted
-      if (clamp) fitted <- clamp_values(fitted, response_range(data, resp), target)
+      if (clamp) fitted <- clamp_values(fitted, ranges[[resp]], target)
       cols[[resp]] <- fitted
       if (coefficients)
         cols <- c(cols, if (multi) prefix_names(casted$coef_cols, resp) else casted$coef_cols)
@@ -206,23 +222,22 @@ topocast <- function(formula, data, onto, radius,
         cols[[if (multi) paste0(resp, ".residual.sd") else "residual.sd"]] <- casted$residual_sd
       }
     }
-    if (diagnostics) cols[["n.valid"]] <- cast_n_valid(fit$n_valid, target, method, radius)
+    if (diagnostics) cols[["n.valid"]] <- cast_n_valid(bundle, fit$layout, radius)
     return(finalize(target, cols, output))
   }
 
-  anomaly <- harmonize_crs(data, as_grid(anomaly, "anomaly"))
-  rfit   <- fit$responses[[1L]]
-  resp   <- rfit$response
-  casted <- cast_onto(rfit, fit$predictors, target, method = method)
+  resp   <- fit$responses[[1L]]
+  casted <- cast_response(bundle, fit$layout$responses[[resp]], fit$predictors,
+                          predictor_values)
   fine_baseline <- casted$fitted
-  if (clamp) fine_baseline <- clamp_values(fine_baseline, response_range(data, resp), target)
+  if (clamp) fine_baseline <- clamp_values(fine_baseline, ranges[[resp]], target)
   baseline <- if (is.null(baseline)) data[[resp]] else harmonize_crs(data, as_grid(baseline, "baseline"))
   cols <- carry_anomalies(fine_baseline, anomaly, baseline, target,
                           type = type, method = method)
   if (diagnostics) {
     cols[["r.squared"]]   <- casted$r_squared
     cols[["residual.sd"]] <- casted$residual_sd
-    cols[["n.valid"]]     <- cast_n_valid(fit$n_valid, target, method, radius)
+    cols[["n.valid"]]     <- cast_n_valid(bundle, fit$layout, radius)
   }
   finalize(target, cols, output)
 }
@@ -403,24 +418,40 @@ resolve_predictors <- function(predictors, data, onto_grid, response_template, a
   terra::rast(layers)
 }
 
+# Where each fitted quantity sits in the stacked coarse bundle, and in the
+# target-side bundle a single bring_onto_target() makes from it. Each response holds
+# a contiguous block of intercept, one slope per predictor, r.squared, and
+# residual.sd; the shared n.valid is the final layer. The bundle is addressed by
+# position rather than by layer name, so no response or predictor name can collide
+# with the layout, and the bundle needs no names of its own.
+bundle_layout <- function(responses, predictors) {
+  k     <- length(predictors)
+  block <- k + 3L
+  slots <- lapply(seq_along(responses), function(i) {
+    base <- (i - 1L) * block
+    list(coefficients = base + seq_len(k + 1L),
+         r_squared    = base + k + 2L,
+         residual_sd  = base + k + 3L)
+  })
+  list(responses = stats::setNames(slots, responses),
+       n_valid   = length(responses) * block + 1L)
+}
+
 # Fit the coarse coefficient grids. The predictors are shared across responses, so
 # one engine call returns the intercept, slopes, and per-cell R-squared/residual SD
 # for every response, plus a valid-cell count shared across them (the mask is
-# complete-case). Returns the shared predictor names, a per-response fit (the
-# coefficient SpatRaster, the R-squared grid, and the residual-SD grid, each on the
-# coarse grid), and the shared valid-cell-count grid.
+# complete-case). Returns the shared predictor and response names, the bundle
+# layout, and every coarse grid stacked into one SpatRaster: assembling them as a
+# single multi-layer object costs one terra construction instead of one per
+# coefficient, and lets the whole fit reach the target in one resample/extract.
 fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, min_variance) {
   response_raster  <- select_layers(data, parsed$response, "data")
   template         <- response_raster[[1L]]
   predictor_raster <- resolve_predictors(parsed$predictors, data, onto_grid,
                                          template, aggregate)
 
-  response_matrices <- stats::setNames(
-    lapply(seq_len(terra::nlyr(response_raster)),
-           function(i) raster_to_matrix(response_raster[[i]])),
-    parsed$response)
-  predictor_matrices <- lapply(seq_len(terra::nlyr(predictor_raster)),
-                               function(i) raster_to_matrix(predictor_raster[[i]]))
+  response_matrices <- stats::setNames(layer_matrices(response_raster), parsed$response)
+  predictor_matrices <- layer_matrices(predictor_raster)
   regression <- tryCatch(
     window_regression(response_matrices, predictor_matrices,
                       radius = radius, min_cells = min_cells,
@@ -433,56 +464,44 @@ fit_windows <- function(parsed, data, onto_grid, radius, aggregate, min_cells, m
       stop(e)
     })
 
-  n_valid <- matrix_to_raster(regression$n_valid, template)
-  names(n_valid) <- "n.valid"
+  layout <- bundle_layout(parsed$response, parsed$predictors)
+  values <- matrix(NA_real_, nrow = terra::ncell(template), ncol = layout$n_valid)
+  for (resp in parsed$response) {
+    slot <- layout$responses[[resp]]
+    values[, slot$coefficients] <- do.call(cbind, c(
+      list(flatten_grid(regression$intercept[[resp]])),
+      lapply(regression$slope[[resp]], flatten_grid)))
+    values[, slot$r_squared]   <- flatten_grid(regression$r_squared[[resp]])
+    values[, slot$residual_sd] <- flatten_grid(regression$residual_sd[[resp]])
+  }
+  values[, layout$n_valid] <- flatten_grid(regression$n_valid)
 
-  responses <- lapply(parsed$response, function(resp) {
-    coefficients <- terra::rast(c(
-      list(matrix_to_raster(regression$intercept[[resp]], template)),
-      lapply(regression$slope[[resp]], matrix_to_raster, template = template)))
-    names(coefficients) <- c("(Intercept)", parsed$predictors)
-    r_squared <- matrix_to_raster(regression$r_squared[[resp]], template)
-    names(r_squared) <- "r.squared"
-    residual_sd <- matrix_to_raster(regression$residual_sd[[resp]], template)
-    names(residual_sd) <- "residual.sd"
-    list(response = resp, coefficients = coefficients,
-         r_squared = r_squared, residual_sd = residual_sd)
-  })
-  list(predictors = parsed$predictors, responses = responses, n_valid = n_valid)
+  list(predictors = parsed$predictors, responses = parsed$response, layout = layout,
+       coarse = terra::setValues(terra::rast(template, nlyrs = layout$n_valid), values))
 }
 
-# Evaluate one response's fitted relationship on the target. The coarse coefficient
-# grids, the R-squared grid, and the residual-SD grid are brought onto the target
-# together (resampled to the fine grid, or interpolated at point geometries) and
-# combined with the target predictors as fitted = intercept + sum_j slope_j *
-# predictor_j. Returns the fitted values, the per-coefficient grids/columns, the
-# R-squared, and the residual SD, in the target's representation.
-cast_onto <- function(rfit, predictors, target, method) {
-  bundle <- bring_onto_target(c(rfit$coefficients, rfit$r_squared, rfit$residual_sd),
-                              target, method)
-  preds  <- target_predictors(target, predictors)
-
-  intercept <- bundle[["(Intercept)"]]
-  slopes <- stats::setNames(lapply(predictors, function(p) bundle[[p]]), predictors)
-  predictor_values <- stats::setNames(lapply(predictors, function(p) preds[[p]]),
-                                       predictors)
-  fitted <- eval_fitted(intercept, slopes, predictor_values)
-
-  coef_cols <- stats::setNames(
-    c(list(intercept), lapply(predictors, function(p) slopes[[p]])),
-    c("(Intercept)", predictors))
-  list(fitted = fitted, coef_cols = coef_cols,
-       r_squared   = clamp_unit(bundle[["r.squared"]]),
-       residual_sd = clamp_nonneg(bundle[["residual.sd"]]))
+# Evaluate one response's fitted relationship from the target-side bundle, whose
+# coefficient, R-squared, and residual-SD values are already on the target
+# (resampled to the fine grid, or interpolated at point geometries). Combines them
+# with the target predictors as fitted = intercept + sum_j slope_j * predictor_j.
+# A bundle slot indexes a layer of a SpatRaster (grid target) or a column of a data
+# frame (point target) alike, so both targets share one expression.
+cast_response <- function(bundle, slot, predictors, predictor_values) {
+  coefficients <- lapply(slot$coefficients, function(i) bundle[[i]])
+  slopes <- stats::setNames(coefficients[-1L], predictors)
+  list(fitted      = eval_fitted(coefficients[[1L]], slopes, predictor_values),
+       coef_cols   = stats::setNames(coefficients, c("(Intercept)", predictors)),
+       r_squared   = clamp_unit(bundle[[slot$r_squared]]),
+       residual_sd = clamp_nonneg(bundle[[slot$residual_sd]]))
 }
 
-# Bring the shared valid-cell-count grid onto the target the same way as any other
-# coarse diagnostic. It is reported once per topocast() call, not once per response,
-# because the mask that produced it is complete-case across every response fit in
-# that call. Clamped to [0, (2*radius+1)^2], the true range a window's valid-cell
-# count can ever hold, since resampling can carry it outside that range.
-cast_n_valid <- function(n_valid, target, method, radius) {
-  clamp_count(as_value(bring_onto_target(n_valid, target, method)), (2 * radius + 1)^2)
+# The shared valid-cell-count grid, taken from the target-side bundle. It is
+# reported once per topocast() call, not once per response, because the mask that
+# produced it is complete-case across every response fit in that call. Clamped to
+# [0, (2*radius+1)^2], the true range a window's valid-cell count can ever hold,
+# since resampling can carry it outside that range.
+cast_n_valid <- function(bundle, layout, radius) {
+  clamp_count(bundle[[layout$n_valid]], (2 * radius + 1)^2)
 }
 
 # Carry each coarse period's anomaly, relative to a coarse baseline, onto the fine
@@ -490,12 +509,15 @@ cast_n_valid <- function(n_valid, target, method, radius) {
 # periods are brought onto the target the same way as the fit. Returns a named list
 # of per-period grids/columns.
 carry_anomalies <- function(fine_baseline, anomaly, baseline, target, type, method) {
-  coarse_baseline <- as_value(bring_onto_target(baseline, target, method))
+  # The whole period stack shares one grid, so it travels onto the target in one
+  # trip. The baseline keeps its own, since it need not share the periods' grid.
+  coarse_baseline <- bring_onto_target(baseline, target, method)[[1L]]
+  coarse_periods  <- bring_onto_target(anomaly, target, method)
 
   n_periods <- terra::nlyr(anomaly)
   periods <- vector("list", n_periods)
   for (period in seq_len(n_periods)) {
-    coarse_value <- as_value(bring_onto_target(anomaly[[period]], target, method))
+    coarse_value <- coarse_periods[[period]]
     if (type == "ratio") {
       periods[[period]] <- fine_baseline * safe_ratio(coarse_value, coarse_baseline)
     } else {
@@ -505,10 +527,16 @@ carry_anomalies <- function(fine_baseline, anomaly, baseline, target, type, meth
   stats::setNames(periods, names(anomaly))
 }
 
-# Raster to a wide matrix (row i, column j of the matrix is raster row i, col j).
-raster_to_matrix <- function(raster) terra::as.matrix(raster, wide = TRUE)
-
-# Wide matrix back to a raster on a template grid, in row-major cell order.
-matrix_to_raster <- function(matrix, template) {
-  terra::setValues(template, as.vector(t(matrix)))
+# Every layer of a raster as a wide matrix (row i, column j of a matrix is raster
+# row i, col j), in one values() trip rather than a subset and a conversion per
+# layer.
+layer_matrices <- function(raster) {
+  values <- terra::values(raster)
+  rows <- terra::nrow(raster); cols <- terra::ncol(raster)
+  lapply(seq_len(ncol(values)),
+         function(i) matrix(values[, i], nrow = rows, ncol = cols, byrow = TRUE))
 }
+
+# A wide matrix flattened to raster cell order (row-major), the order terra fills a
+# layer's values in.
+flatten_grid <- function(matrix) as.vector(t(matrix))

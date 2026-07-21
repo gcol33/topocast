@@ -7,6 +7,7 @@
 ^dev_check\.R$
 ^dev_pkgdown\.R$
 ^dev_notes$
+^figure$
 ^verify_.*\.png$
 ^LICENSE\.md$
 ^README\.Rmd$

@@ -1,5 +1,16 @@
 # topocast 0.0.4
 
+* `topocast()` now brings every coarse grid a call fits -- each response's
+  coefficients and diagnostics, plus the shared valid-cell count -- onto the target
+  in one resample (grid target) or extract (point target), resolves the target
+  predictors once, and assembles the coarse grids as a single multi-layer object
+  rather than one terra object per coefficient. Each of those was previously done
+  once per response, so a call repeated its whole coarse-to-target trip for every
+  response it fit. The per-call fixed cost falls from about 0.58 s to about 0.11 s,
+  a 25,000-point call with 19 responses from 1.28 s to 0.46 s, and the S4
+  construction and dispatch that took over a fifth of a call no longer appears in
+  its profile. With `anomaly`, the period stack likewise travels in one trip rather
+  than one per period. Results are unchanged (#35).
 * The moving-window engine's summed-area tables are now built and queried in
   double-double (extended) precision rather than plain `double`. A summed-area
   table entry near the far side of a large grid holds a sum over most of the
