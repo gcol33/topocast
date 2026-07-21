@@ -10,7 +10,12 @@ This is a new submission of topocast to CRAN.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 0 notes
+0 errors | 0 warnings | 0 notes locally.
+
+win-builder r-devel reports one NOTE, the expected new-submission one. It also
+lists "Karger", "et" and "al" as possibly misspelled: these are the author surname
+and the standard abbreviation from the method reference in the Description field,
+not software names, so they are left unquoted.
 
 ## Notes for the reviewer
 
