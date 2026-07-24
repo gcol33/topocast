@@ -260,7 +260,7 @@ test_that("min_cells > 0 excludes windows that min_cells = 0 would fit (issue #1
   elevation <- matrix(NA_real_, 5, 5)
   climate   <- matrix(NA_real_, 5, 5)
   # exactly two valid, distinct-elevation cells fall in the radius-1 window
-  # centred at (3, 3); every other cell in this grid is NA.
+  # centered at (3, 3); every other cell in this grid is NA.
   elevation[3, 3] <- 1000; elevation[3, 4] <- 1200
   climate[3, 3]   <- 20;   climate[3, 4]   <- 18
 
@@ -355,7 +355,7 @@ test_that("threads is validated as a whole number of at least 1, or NULL (issue 
 
 test_that("the fit does not depend on the thread count (issue #36)", {
   set.seed(37)
-  # Larger than the 256-row chunk the engine parallelises within, so more than one
+  # Larger than the 256-row chunk the engine parallelizes within, so more than one
   # thread genuinely shares the work.
   elevation <- matrix(runif(300 * 40, 0, 2000), 300, 40)
   climate <- 800 - 0.1 * elevation + matrix(rnorm(300 * 40, 0, 5), 300, 40)

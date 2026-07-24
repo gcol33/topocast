@@ -4,7 +4,7 @@
   threads the fitting loop may use, defaulting to every available core as before.
   The fitting loop previously took every core with no per-call way to ask for
   fewer, since the only control was `OMP_NUM_THREADS`, which the OpenMP runtime
-  reads once at start-up. A caller fitting many targets by parallelising at the R
+  reads once at start-up. A caller fitting many targets by parallelizing at the R
   level therefore got a full thread team in each worker, W x C threads for W
   workers on C cores; such a caller can now pass `threads = 1` and own the cores
   itself. The threads buy little on their own -- 24 of them fit a 121 x 146 grid

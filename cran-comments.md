@@ -12,10 +12,15 @@ This is a new submission of topocast to CRAN.
 
 0 errors | 0 warnings | 0 notes locally.
 
-win-builder r-devel reports one NOTE, the expected new-submission one. It also
-lists "Karger", "et" and "al" as possibly misspelled: these are the author surname
-and the standard abbreviation from the method reference in the Description field,
-not software names, so they are left unquoted.
+win-builder r-devel reports one NOTE, the expected new-submission one. The
+incoming checks also list possibly misspelled words in the Description field, all
+of which are correct as written:
+
+* "Downscales", "Downscaling" -- standard terms in the climate and remote-sensing
+  literature for deriving a fine-resolution field from a coarse one. They are
+  ordinary English words here, not software names, so they are left unquoted.
+* "Karger", "et", "al" -- the author surname and the standard abbreviation from
+  the method reference in the Description field.
 
 ## Notes for the reviewer
 

@@ -27,7 +27,7 @@ knitr::opts_chunk$set(
 
 **Downscale a coarse raster onto fine terrain by moving-window regression.**
 
-```{r downscale, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 9, fig.height = 4.3, dpi = 140, fig.alt = "A coarse blocky precipitation grid beside the same field downscaled onto fine terrain, sharing one colour scale."}
+```{r downscale, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 9, fig.height = 4.3, dpi = 140, fig.alt = "A coarse blocky precipitation grid beside the same field downscaled onto fine terrain, sharing one color scale."}
 library(topocast)
 library(terra)
 

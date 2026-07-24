@@ -34,7 +34,7 @@
 #'   `NULL` (the default) for every core available. A request above the number of
 #'   cores the OpenMP runtime offers is clamped to that number, and every request
 #'   is clamped to two while a package check is running. Set `threads = 1` when
-#'   calling from inside a worker that is itself parallelised over targets, so the
+#'   calling from inside a worker that is itself parallelized over targets, so the
 #'   workers do not each spawn a full thread team; the fit is a small share of a
 #'   call, so more workers at one thread each generally use the cores better than
 #'   one worker at many. Without OpenMP the fit is single-threaded and this

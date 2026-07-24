@@ -22,7 +22,7 @@ A coarse climate grid tells you the precipitation over a 600 m cell. A digital
 elevation model tells you the terrain at 100 m. `topocast` joins the two: it
 learns how the coarse variable tracks the terrain, locally, and rewrites the
 coarse grid at the resolution of the elevation model. The relationship is fit
-once per neighbourhood with a moving-window regression, and the cost does not
+once per neighborhood with a moving-window regression, and the cost does not
 grow with the window size.
 
 This vignette downscales a synthetic precipitation field, adds a second terrain
@@ -101,7 +101,7 @@ plot(fine_prec,   main = "downscaled (100 m)")
 ```
 
 The `radius` is measured in coarse cells. A radius of 4 means each regression
-sees a 9 by 9 window of coarse cells, here a 5.4 km neighbourhood. Inside that
+sees a 9 by 9 window of coarse cells, here a 5.4 km neighborhood. Inside that
 window `topocast` fits one intercept and one slope, then resamples those
 coefficients to the fine grid and evaluates `intercept + slope * elev` at every
 fine cell.

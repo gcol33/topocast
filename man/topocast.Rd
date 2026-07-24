@@ -97,7 +97,7 @@ limit where a fine predictor lies outside the range it was fit on. Default
 \code{FALSE}.}
 
 \item{min_cells, min_variance, threads}{Passed to \code{\link[=window_regression]{window_regression()}}. Set
-\code{threads = 1} when calling from inside a worker that is itself parallelised
+\code{threads = 1} when calling from inside a worker that is itself parallelized
 over targets, so the workers do not each spawn a full thread team.}
 }
 \value{
