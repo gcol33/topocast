@@ -112,9 +112,10 @@ x <- as.matrix(elev, wide = TRUE)
 small <- window_regression(y, x, radius = 3)
 large <- window_regression(y, x, radius = 15)
 
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(setValues(elev, as.vector(t(small$slope[[1]]))), main = "slope, radius 3")
 plot(setValues(elev, as.vector(t(large$slope[[1]]))), main = "slope, radius 15")
+par(op)
 ```
 
 ## Numerical and masking choices

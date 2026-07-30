@@ -1,5 +1,9 @@
 # topocast 0.0.5
 
+* The vignettes restore the graphical parameters they set: each plotting chunk
+  that calls `par()` saves the previous settings and resets them with `par(op)`
+  afterward, so a vignette no longer leaves `mfrow` and `mar` altered for later
+  code.
 * `topocast()` and `window_regression()` gain a `threads` argument, the number of
   threads the fitting loop may use, defaulting to every available core as before.
   The fitting loop previously took every core with no per-call way to ask for
