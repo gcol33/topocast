@@ -1,6 +1,12 @@
 ## Submission
 
-This is a new submission of topocast to CRAN.
+This is a resubmission of topocast to CRAN.
+
+In response to Konstanze Lauseker's review, the vignettes now restore the
+graphical parameters they change: each plotting chunk that calls `par()` saves
+the previous settings with `op <- par(...)` and resets them with `par(op)`
+afterward, so no example, vignette, or demo alters the user's `par()`, options,
+or working directory without resetting it.
 
 ## Test environments
 

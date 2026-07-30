@@ -95,9 +95,10 @@ the two side by side shows where the detail comes from: the coarse field sets
 the broad level, the elevation carries the texture.
 
 ```{r plot-single, fig.height = 3.2}
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(prec_coarse, main = "coarse precipitation (600 m)")
 plot(fine_prec,   main = "downscaled (100 m)")
+par(op)
 ```
 
 The `radius` is measured in coarse cells. A radius of 4 means each regression
@@ -181,9 +182,10 @@ grids <- topocast(prec ~ elev, data = coarse, onto = terrain, radius = 4,
                   coefficients = TRUE)
 names(grids)
 
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(grids[["prec"]], main = "downscaled precipitation")
 plot(grids[["elev"]], main = "local slope (mm per m)")
+par(op)
 ```
 
 The slope layer is the local precipitation lapse rate. Where it is steep,
@@ -235,9 +237,10 @@ the fine baseline scaled by that period's coarse anomaly. The ratio path guards
 a zero baseline by returning `NA` rather than dividing by zero.
 
 ```{r plot-series, fig.height = 3.2}
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(series[["jan"]], main = "January (100 m)")
 plot(series[["jul"]], main = "July (100 m)")
+par(op)
 ```
 
 ## Points and other spatial classes
