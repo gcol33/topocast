@@ -36,6 +36,13 @@ This vignette describes the method: the local regression, the summed-area tables
 that make it fast, the numerical choices, and what the output does and does not
 preserve.
 
+## Installation
+
+```{r, eval = FALSE}
+# install.packages("pak")
+pak::pak("gcol33/topocast")
+```
+
 ## A regression in every neighborhood
 
 A global regression of the coarse response $y$ on $k$ predictors $x_1, \dots,

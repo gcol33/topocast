@@ -29,6 +29,13 @@ This vignette downscales a synthetic precipitation field, adds a second terrain
 predictor, carries a short time series, and drops down to the matrix engine that
 does the work.
 
+## Installation
+
+```{r, eval = FALSE}
+# install.packages("pak")
+pak::pak("gcol33/topocast")
+```
+
 ```{r libraries}
 library(topocast)
 library(terra)

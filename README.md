@@ -31,6 +31,15 @@ around every cell it learns how the variable depends on the predictor, then
 evaluates that local relationship on the fine predictor. A 1 km precipitation
 grid and a 100 m elevation model become a 100 m precipitation grid.
 
+## Installation
+
+```r
+# install.packages("pak")
+pak::pak("gcol33/topocast")
+```
+
+## Quick start
+
 ```r
 library(topocast)
 library(terra)
@@ -100,13 +109,6 @@ takes any number of named predictors.
   output to the observed range of the coarse response.
 - **A matrix engine.** `window_regression()` exposes the kernel for callers who
   hold their data as matrices.
-
-## Installation
-
-```r
-# install.packages("pak")
-pak::pak("gcol33/topocast")
-```
 
 ## Usage
 

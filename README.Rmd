@@ -28,6 +28,15 @@ knitr::opts_chunk$set(
 
 **Downscale a coarse raster onto fine terrain by moving-window regression.**
 
+## Installation
+
+```r
+# install.packages("pak")
+pak::pak("gcol33/topocast")
+```
+
+## Quick start
+
 ```{r downscale, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 9, fig.height = 4.3, dpi = 140, fig.alt = "A coarse blocky precipitation grid beside the same field downscaled onto fine terrain, sharing one color scale."}
 library(topocast)
 library(terra)
@@ -132,13 +141,6 @@ takes any number of named predictors.
   output to the observed range of the coarse response.
 - **A matrix engine.** `window_regression()` exposes the kernel for callers who
   hold their data as matrices.
-
-## Installation
-
-```r
-# install.packages("pak")
-pak::pak("gcol33/topocast")
-```
 
 ## Usage
 
