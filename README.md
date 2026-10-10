@@ -14,6 +14,7 @@ output:
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
 [![R-CMD-check](https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml)
+[![Codecov test coverage](https://codecov.io/gh/gcol33/topocast/graph/badge.svg)](https://app.codecov.io/gh/gcol33/topocast)
 <!-- badges: end -->
 
 *coarse climate grids at the resolution of your terrain*
