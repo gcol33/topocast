@@ -9,7 +9,8 @@ independent of the window size, then resampled to the target resolution
 and applied to the fine-resolution predictors. Multiplicative and
 additive anomaly application downscale time series relative to a
 baseline climatology, following the regression-on-elevation approach
-used for high-resolution climate surfaces (Karger et al. 2017)
+used for high-resolution climate surfaces described in Karger et al.
+(2017)
 [doi:10.1038/sdata.2017.122](https://doi.org/10.1038/sdata.2017.122) .
 
 ## See also

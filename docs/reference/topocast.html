@@ -7,7 +7,20 @@ varying coefficients."><meta property="og:description" content="Fits a local lin
 predictors over a moving window, resamples the resulting intercept and slope
 grids to the fine grid, and evaluates them on the fine-resolution predictors.
 The output carries the fine-scale structure of the predictors with locally
-varying coefficients."></head><body>
+varying coefficients."><script>
+(function () {
+  var D = String.fromCharCode(36);
+  window.MathJax = {
+    tex: {
+      inlineMath: [[D, D], ["\\(", "\\)"]],
+      displayMath: [[D + D, D + D], ["\\[", "\\]"]]
+    },
+    chtml: { linebreaks: { automatic: true, width: "90% container" } },
+    svg: { linebreaks: { automatic: true, width: "90% container" } },
+    options: { renderActions: { addMenu: [] } }
+  };
+})();
+</script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -15,7 +28,7 @@ varying coefficients."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">topocast</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.3</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.5</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -69,13 +82,16 @@ varying coefficients.</p>
 <span>  <span class="va">radius</span>,</span>
 <span>  aggregate <span class="op">=</span> <span class="st">"average"</span>,</span>
 <span>  coefficients <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  diagnostics <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  anomaly <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  baseline <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ratio"</span>, <span class="st">"additive"</span><span class="op">)</span>,</span>
-<span>  method <span class="op">=</span> <span class="st">"cubicspline"</span>,</span>
+<span>  method <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  output <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  clamp <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  min_cells <span class="op">=</span> <span class="fl">0L</span>,</span>
-<span>  min_variance <span class="op">=</span> <span class="fl">1e-08</span></span>
+<span>  min_variance <span class="op">=</span> <span class="fl">1e-08</span>,</span>
+<span>  threads <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -86,7 +102,8 @@ varying coefficients.</p>
 <dl><dt id="arg-formula">formula<a class="anchor" aria-label="anchor" href="#arg-formula"></a></dt>
 <dd><p>A two-sided formula of bare layer names, such as
 <code>prec ~ elev + slope</code>. The left-hand side names the coarse response layer in
-<code>data</code>; the right-hand side names the predictor layers.</p></dd>
+<code>data</code>, or <code>cbind(prec, tmin)</code> for several responses sharing the predictors;
+the right-hand side names the predictor layers.</p></dd>
 
 
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
@@ -105,8 +122,9 @@ shortcut needs a grid).</p></dd>
 
 
 <dt id="arg-radius">radius<a class="anchor" aria-label="anchor" href="#arg-radius"></a></dt>
-<dd><p>Integer window radius in coarse cells; the window is a square of
-side <code>2 * radius + 1</code>.</p></dd>
+<dd><p>Integer window radius in coarse cells, at least <code>1</code>; the window
+is a square of side <code>2 * radius + 1</code>. A radius of <code>0</code> is rejected: its
+one-cell window can never hold the valid cells a fit needs.</p></dd>
 
 
 <dt id="arg-aggregate">aggregate<a class="anchor" aria-label="anchor" href="#arg-aggregate"></a></dt>
@@ -118,29 +136,52 @@ side <code>2 * radius + 1</code>.</p></dd>
 <dt id="arg-coefficients">coefficients<a class="anchor" aria-label="anchor" href="#arg-coefficients"></a></dt>
 <dd><p>If <code>TRUE</code>, return the fitted layer together with the
 <code>(Intercept)</code> and per-predictor slope grids on the <code>onto</code> grid. Not supported
-with <code>anomaly</code>. Default <code>FALSE</code>.</p></dd>
+with <code>anomaly</code>. Default <code>FALSE</code>. With <code>output = "raster"</code>, the <code>raster</code>
+package's own <code><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names()</a></code> accessor rewrites <code>"(Intercept)"</code> to <code>"X.Intercept."</code>
+(via <code><a href="https://rdrr.io/r/base/make.names.html" class="external-link">make.names()</a></code>, unconditionally, on every read); every other output
+class keeps the name verbatim.</p></dd>
+
+
+<dt id="arg-diagnostics">diagnostics<a class="anchor" aria-label="anchor" href="#arg-diagnostics"></a></dt>
+<dd><p>If <code>TRUE</code>, also return three grids (or columns) describing the
+local fit, each brought onto <code>onto</code>: <code>r.squared</code>, the per-window coefficient of
+determination, mapping where the terrain relationship is strong and where the
+downscaled field rests mostly on the coarse input; <code>residual.sd</code>, the residual
+standard deviation of the local fit in the response's own units; and <code>n.valid</code>,
+the count of valid coarse cells the window held, which tells a fit that is weak
+because the window barely cleared the minimum valid-cell requirement apart from
+one that is weak because the terrain relationship is genuinely noisy there.
+<code>n.valid</code> is reported once per call, not once per response, since the
+valid-cell mask is complete-case across every response fit together. Default
+<code>FALSE</code>.</p></dd>
 
 
 <dt id="arg-anomaly">anomaly<a class="anchor" aria-label="anchor" href="#arg-anomaly"></a></dt>
-<dd><p>Optional multi-layer <code>SpatRaster</code> on the coarse grid; each layer
-is one period to downscale relative to <code>baseline</code>. When supplied, the result
-has one layer (or column) per period.</p></dd>
+<dd><p>Optional multi-layer coarse grid (a <code>SpatRaster</code>, <code>Raster*</code>, or
+<code>stars</code> object, like <code>data</code>); each layer is one period to downscale relative
+to <code>baseline</code>. When supplied, the result has one layer (or column) per period.</p></dd>
 
 
 <dt id="arg-baseline">baseline<a class="anchor" aria-label="anchor" href="#arg-baseline"></a></dt>
-<dd><p>Optional single-layer <code>SpatRaster</code>, the coarse response baseline
-that <code>anomaly</code> is taken relative to. Defaults to the response layer of <code>data</code>.
-Ignored when <code>anomaly</code> is <code>NULL</code>.</p></dd>
+<dd><p>Optional single-layer coarse grid (a <code>SpatRaster</code>, <code>Raster*</code>, or
+<code>stars</code> object, like <code>data</code>), the coarse response baseline that <code>anomaly</code> is
+taken relative to. Defaults to the response layer of <code>data</code>. Ignored when
+<code>anomaly</code> is <code>NULL</code>.</p></dd>
 
 
 <dt id="arg-type">type<a class="anchor" aria-label="anchor" href="#arg-type"></a></dt>
 <dd><p><code>"ratio"</code> (multiplicative) or <code>"additive"</code>; used only with
-<code>anomaly</code>.</p></dd>
+<code>anomaly</code>. Default <code>"ratio"</code>.</p></dd>
 
 
 <dt id="arg-method">method<a class="anchor" aria-label="anchor" href="#arg-method"></a></dt>
-<dd><p>Resampling method for the coefficient grids, passed to
-<code><a href="https://rspatial.github.io/terra/reference/resample.html" class="external-link">terra::resample()</a></code>. Default <code>"cubicspline"</code>.</p></dd>
+<dd><p>Interpolation method for bringing the coefficient grids onto
+<code>onto</code>. For a grid <code>onto</code>, passed to <code><a href="https://rspatial.github.io/terra/reference/resample.html" class="external-link">terra::resample()</a></code>; default
+<code>"cubicspline"</code>. For a point (sf/SpatVector) <code>onto</code>, passed to
+<code><a href="https://rspatial.github.io/terra/reference/extract.html" class="external-link">terra::extract()</a></code>, which only supports <code>"simple"</code> and <code>"bilinear"</code>;
+default <code>"bilinear"</code>. Default <code>NULL</code> uses the kind-appropriate default;
+an explicit value that <code><a href="https://rspatial.github.io/terra/reference/extract.html" class="external-link">terra::extract()</a></code> does not support is an error
+for a point target.</p></dd>
 
 
 <dt id="arg-output">output<a class="anchor" aria-label="anchor" href="#arg-output"></a></dt>
@@ -149,17 +190,31 @@ Ignored when <code>anomaly</code> is <code>NULL</code>.</p></dd>
 targets). Default <code>NULL</code> returns the result in the class of <code>onto</code>.</p></dd>
 
 
-<dt id="arg-min-cells-min-variance">min_cells, min_variance<a class="anchor" aria-label="anchor" href="#arg-min-cells-min-variance"></a></dt>
-<dd><p>Passed to <code><a href="window_regression.html">window_regression()</a></code>.</p></dd>
+<dt id="arg-clamp">clamp<a class="anchor" aria-label="anchor" href="#arg-clamp"></a></dt>
+<dd><p>If <code>TRUE</code>, bound the downscaled field to the observed range of the
+coarse response, a guard against the local linear fit extrapolating without
+limit where a fine predictor lies outside the range it was fit on. Default
+<code>FALSE</code>.</p></dd>
+
+
+<dt id="arg-min-cells-min-variance-threads">min_cells, min_variance, threads<a class="anchor" aria-label="anchor" href="#arg-min-cells-min-variance-threads"></a></dt>
+<dd><p>Passed to <code><a href="window_regression.html">window_regression()</a></code>. Set
+<code>threads = 1</code> when calling from inside a worker that is itself parallelized
+over targets, so the workers do not each spawn a full thread team.</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>The downscaled result on the geometry of <code>onto</code>, in the class of <code>onto</code>
 or the class named by <code>output</code>. For a grid target: a single layer named for
-the response; one layer per period when <code>anomaly</code> is supplied; or the fitted
-layer plus <code>(Intercept)</code> and slope grids when <code>coefficients = TRUE</code>. For a
-point target the same quantities are returned as prediction columns.</p>
+the response; one layer per response with a <code><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind()</a></code> left-hand side; one layer
+per period when <code>anomaly</code> is supplied; the fitted layer plus <code>(Intercept)</code> and
+slope grids when <code>coefficients = TRUE</code>; and <code>r.squared</code> and <code>residual.sd</code> grids
+plus a shared <code>n.valid</code> grid when <code>diagnostics = TRUE</code>. With several responses
+the coefficient, <code>r.squared</code>, and <code>residual.sd</code> grids are prefixed by the
+response name; <code>n.valid</code> is not, since it is the same valid-cell mask for every
+response fit in the call. For a point target the same quantities are returned
+as prediction columns.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -176,11 +231,24 @@ digital elevation model, and no coarse predictor in hand. A predictor named in
 the formula but absent from <code>data</code> is then derived by aggregating its <code>onto</code>
 layer to the response grid with <code>aggregate</code>, so <code>topocast(prec ~ elev, data = prec_coarse, onto = dem_fine, radius = 15)</code> works directly from a coarse
 climate layer and a fine DEM.</p>
+<p>Several responses that share the predictors are downscaled together by naming
+them as <code>cbind(prec, tmin) ~ elev</code>. The moving-window design depends only on the
+predictors, so it is fit once and solved against every response; the result has
+one layer (or column) per response. With <code>coefficients</code> or <code>diagnostics</code>, the
+extra grids are prefixed by the response name. The setup a call does around the
+fit is shared the same way: the coefficient grids reach <code>onto</code> in one
+resampling step and the <code>onto</code> predictors are read once for the call. Responses
+on one coarse grid sharing one <code>onto</code>, such as several climate scenarios
+downscaled onto the same range, therefore cost less named together in one call
+than split across several.</p>
 <p>For a time series, supply <code>anomaly</code>: a stack of coarse periods. The baseline
 relationship is fit once and each period's coarse anomaly, relative to
 <code>baseline</code>, is carried onto the fine baseline. Use <code>type = "ratio"</code> for
 non-negative variables such as precipitation and <code>type = "additive"</code> for
-variables such as temperature.</p>
+variables such as temperature. With <code>type = "ratio"</code>, a coarse cell where the
+baseline is zero and the period is a genuine <code>x / 0</code> (undefined) is <code>NA</code>; where
+both the baseline and the period are zero, the ratio is taken as <code>1</code> (no
+change) rather than <code>NA</code>.</p>
 <p><code>data</code> and <code>onto</code> may be any of the common spatial classes. A gridded input is
 accepted as a <code>SpatRaster</code>, a <code>Raster*</code> object (raster), or a <code>stars</code> object.
 The target <code>onto</code> may instead be a set of points as an <code>sf</code> or <code>SpatVector</code>
@@ -217,6 +285,16 @@ as attributes. By default the result is returned in the class of <code>onto</cod
 <span><span class="va">coef_grids</span> <span class="op">&lt;-</span> <span class="fu">topocast</span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">data</span>, onto <span class="op">=</span> <span class="va">terrain</span>, radius <span class="op">=</span> <span class="fl">4</span>,</span>
 <span>                       coefficients <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
+<span><span class="co"># several responses sharing the predictor, downscaled in one call</span></span>
+<span><span class="va">temperature</span> <span class="op">&lt;-</span> <span class="fl">25</span> <span class="op">-</span> <span class="fl">0.006</span> <span class="op">*</span> <span class="va">elevation</span></span>
+<span><span class="va">data2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">precipitation</span>, <span class="va">temperature</span>, <span class="va">elevation</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">data2</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"prec"</span>, <span class="st">"temp"</span>, <span class="st">"elev"</span><span class="op">)</span></span>
+<span><span class="va">both</span> <span class="op">&lt;-</span> <span class="fu">topocast</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="va">prec</span>, <span class="va">temp</span><span class="op">)</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">data2</span>, onto <span class="op">=</span> <span class="va">terrain</span>, radius <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># diagnostics: the local fit quality as an r.squared grid</span></span>
+<span><span class="va">with_r2</span> <span class="op">&lt;-</span> <span class="fu">topocast</span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">data</span>, onto <span class="op">=</span> <span class="va">terrain</span>, radius <span class="op">=</span> <span class="fl">4</span>,</span>
+<span>                    diagnostics <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span></span>
 <span><span class="co"># time series: supply the periods</span></span>
 <span><span class="va">months</span> <span class="op">&lt;-</span> <span class="va">precipitation</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.8</span>, <span class="fl">1.2</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">months</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"jan"</span>, <span class="st">"feb"</span><span class="op">)</span></span>
@@ -241,7 +319,7 @@ as attributes. By default the result is returned in the class of <code>onto</cod
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer></div>
@@ -250,6 +328,5 @@ as attributes. By default the result is returned in the class of <code>onto</cod
 
 
 
-  
-</body></html>
+  </body></html>
 

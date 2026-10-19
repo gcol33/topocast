@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it as below.
+type: software
+title: 'topocast: Moving-Window Regression Downscaling of Raster Data'
+version: 0.0.5
+authors:
+- family-names: Colling
+  given-names: Gilles
+  orcid: https://orcid.org/0000-0003-3070-6066
+license: MIT
+repository-code: https://github.com/gcol33/topocast
+url: https://gillescolling.com/topocast/
+preferred-citation:
+  type: software
+  title: 'topocast: Moving-Window Regression Downscaling of Raster Data'
+  authors:
+  - family-names: Colling
+    given-names: Gilles
+  year: 2026
+  url: https://github.com/gcol33/topocast
+  notes: R package version 0.0.5

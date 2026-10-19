@@ -5,16 +5,24 @@ climate variable often tracks elevation through a roughly linear
 relationship, so a high-resolution elevation model can carry the
 variable to a finer grid through a regression. This is the
 regression-on-elevation step behind high-resolution climate surfaces
-such as CHELSA (Karger et al. 2017). `topocast` generalises the
+such as CHELSA (Karger et al. 2017). `topocast` generalizes the
 predictor from elevation alone to any set of aligned terrain covariates,
 fits the relationship locally rather than globally, and keeps the
-per-cell cost independent of the neighbourhood size.
+per-cell cost independent of the neighborhood size.
 
 This vignette describes the method: the local regression, the
 summed-area tables that make it fast, the numerical choices, and what
 the output does and does not preserve.
 
-## A regression in every neighbourhood
+## Installation
+
+``` r
+
+# install.packages("pak")
+pak::pak("gcol33/topocast")
+```
+
+## A regression in every neighborhood
 
 A global regression of the coarse response $`y`$ on $`k`$ predictors
 $`x_1, \dots,
@@ -50,8 +58,8 @@ the fine predictors; the coefficients carry the relationship.
 
 ## Constant cost with summed-area tables
 
-A naive moving window re-sums every cell in the neighbourhood for every
-centre, so its cost grows with the window area. For a radius of 20 that
+A naive moving window re-sums every cell in the neighborhood for every
+center, so its cost grows with the window area. For a radius of 20 that
 is over 1,600 cells touched per output cell. `topocast` avoids this with
 summed-area tables, also called integral images.
 
@@ -97,34 +105,70 @@ x <- as.matrix(elev, wide = TRUE)
 small <- window_regression(y, x, radius = 3)
 large <- window_regression(y, x, radius = 15)
 
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(setValues(elev, as.vector(t(small$slope[[1]]))), main = "slope, radius 3")
 plot(setValues(elev, as.vector(t(large$slope[[1]]))), main = "slope, radius 15")
 ```
 
 ![](how-it-works_files/figure-html/cost-1.svg)
 
+``` r
+
+par(op)
+```
+
 ## Numerical and masking choices
 
-**Global centring.** Before accumulation the response and each predictor
-are centred on their global mean over the valid cells. Centring keeps
-the entries of $`A`$ small even when elevation runs into the thousands,
-which conditions the solve. The intercept is mapped back to the raw
-response and predictor scale on output, so the returned coefficients are
-on the original units.
+**Global centering.** Before accumulation the response and each
+predictor are centered on their global mean over the valid cells.
+Centering keeps the entries of $`A`$ small even when elevation runs into
+the thousands, which conditions the solve. The intercept is mapped back
+to the raw response and predictor scale on output, so the returned
+coefficients are on the original units.
 
 **Complete-case masking.** A cell contributes to a window only where the
 response and every predictor are finite. A separate count table tracks
 how many valid cells fall in each window, and invalid cells are set to
-zero in the centred copies so they drop out of the sums without
+zero in the centered copies so they drop out of the sums without
 distorting them.
 
 **Degenerate windows.** A cell is returned as `NA` in three cases: the
 window holds fewer valid cells than the model needs (`k + 1`, raised by
 `min_cells`); a predictor has within-window variance below
 `min_variance`, so its slope is not identified; or the assembled system
-is singular. These guards keep a flat or data-starved neighbourhood from
+is singular. These guards keep a flat or data-starved neighborhood from
 producing a meaningless coefficient.
+
+## Reporting fit quality
+
+The same sufficient statistics give the local quality of each fit at no
+extra window cost. One more summed-area table, of the squared centered
+response, yields the within-window total sum of squares
+$`\mathrm{SST} = \sum (y - \bar y_W)^2`$, and the residual sum of
+squares follows from the fitted coefficients as
+$`\mathrm{SSE} = y'y - \hat\beta' b`$, where $`b`$ is the response side
+of the normal equations. Their ratio is the coefficient of
+determination,
+
+``` math
+R^2(r,c) = 1 - \frac{\mathrm{SSE}}{\mathrm{SST}},
+```
+
+returned by `diagnostics = TRUE` as an `r.squared` grid on the fine
+resolution. It maps where the terrain explains the response and where
+the downscaled field carries little more than the coarse level.
+
+The same statistics also give the residual standard deviation,
+$`\hat\sigma(r,c) = \sqrt{\mathrm{SSE} / (n - k - 1)}`$, in the
+response’s own units rather than R-squared’s unitless, variance-relative
+scale, and the window’s valid cell count $`n`$ itself.
+`diagnostics = TRUE` returns both, as `residual.sd` and `n.valid`. A low
+R-squared is ambiguous on its own: it can mean the terrain-response
+relationship is genuinely weak in that neighborhood, or that the window
+barely cleared the minimum valid-cell count and the fit is just noisy
+from too little data. `n.valid` tells the two apart. Because the
+valid-cell mask is complete-case across every response fit in one call,
+`n.valid` is one shared grid rather than one per response.
 
 ## Carrying a time series
 
@@ -166,7 +210,9 @@ elevation reaches values the coarse window never saw, the regression
 extrapolates linearly. The fine output is only as trustworthy as a
 linear relationship over that extended range, which is a reason to keep
 predictors that stay roughly linear with the response and to inspect the
-result where the terrain is extreme.
+result where the terrain is extreme. Setting `clamp = TRUE` bounds the
+downscaled field to the observed range of the coarse response, capping
+such extrapolation at the values the variable actually takes.
 
 ## Reference
 

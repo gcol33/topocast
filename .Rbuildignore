@@ -18,3 +18,4 @@
 ^build_site\.R$
 ^\.github$
 ^cran-comments\.md$
+^CITATION\.cff$

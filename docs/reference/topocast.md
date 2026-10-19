@@ -16,13 +16,16 @@ topocast(
   radius,
   aggregate = "average",
   coefficients = FALSE,
+  diagnostics = FALSE,
   anomaly = NULL,
   baseline = NULL,
   type = c("ratio", "additive"),
-  method = "cubicspline",
+  method = NULL,
   output = NULL,
+  clamp = FALSE,
   min_cells = 0L,
-  min_variance = 1e-08
+  min_variance = 1e-08,
+  threads = NULL
 )
 ```
 
@@ -32,7 +35,8 @@ topocast(
 
   A two-sided formula of bare layer names, such as
   `prec ~ elev + slope`. The left-hand side names the coarse response
-  layer in `data`; the right-hand side names the predictor layers.
+  layer in `data`, or `cbind(prec, tmin)` for several responses sharing
+  the predictors; the right-hand side names the predictor layers.
 
 - data:
 
@@ -52,8 +56,9 @@ topocast(
 
 - radius:
 
-  Integer window radius in coarse cells; the window is a square of side
-  `2 * radius + 1`.
+  Integer window radius in coarse cells, at least `1`; the window is a
+  square of side `2 * radius + 1`. A radius of `0` is rejected: its
+  one-cell window can never hold the valid cells a fit needs.
 
 - aggregate:
 
@@ -66,29 +71,60 @@ topocast(
 
   If `TRUE`, return the fitted layer together with the `(Intercept)` and
   per-predictor slope grids on the `onto` grid. Not supported with
-  `anomaly`. Default `FALSE`.
+  `anomaly`. Default `FALSE`. With `output = "raster"`, the `raster`
+  package's own
+  [`names()`](https://rspatial.github.io/terra/reference/names.html)
+  accessor rewrites `"(Intercept)"` to `"X.Intercept."` (via
+  [`make.names()`](https://rdrr.io/r/base/make.names.html),
+  unconditionally, on every read); every other output class keeps the
+  name verbatim.
+
+- diagnostics:
+
+  If `TRUE`, also return three grids (or columns) describing the local
+  fit, each brought onto `onto`: `r.squared`, the per-window coefficient
+  of determination, mapping where the terrain relationship is strong and
+  where the downscaled field rests mostly on the coarse input;
+  `residual.sd`, the residual standard deviation of the local fit in the
+  response's own units; and `n.valid`, the count of valid coarse cells
+  the window held, which tells a fit that is weak because the window
+  barely cleared the minimum valid-cell requirement apart from one that
+  is weak because the terrain relationship is genuinely noisy there.
+  `n.valid` is reported once per call, not once per response, since the
+  valid-cell mask is complete-case across every response fit together.
+  Default `FALSE`.
 
 - anomaly:
 
-  Optional multi-layer `SpatRaster` on the coarse grid; each layer is
-  one period to downscale relative to `baseline`. When supplied, the
-  result has one layer (or column) per period.
+  Optional multi-layer coarse grid (a `SpatRaster`, `Raster*`, or
+  `stars` object, like `data`); each layer is one period to downscale
+  relative to `baseline`. When supplied, the result has one layer (or
+  column) per period.
 
 - baseline:
 
-  Optional single-layer `SpatRaster`, the coarse response baseline that
+  Optional single-layer coarse grid (a `SpatRaster`, `Raster*`, or
+  `stars` object, like `data`), the coarse response baseline that
   `anomaly` is taken relative to. Defaults to the response layer of
   `data`. Ignored when `anomaly` is `NULL`.
 
 - type:
 
   `"ratio"` (multiplicative) or `"additive"`; used only with `anomaly`.
+  Default `"ratio"`.
 
 - method:
 
-  Resampling method for the coefficient grids, passed to
-  [`terra::resample()`](https://rspatial.github.io/terra/reference/resample.html).
-  Default `"cubicspline"`.
+  Interpolation method for bringing the coefficient grids onto `onto`.
+  For a grid `onto`, passed to
+  [`terra::resample()`](https://rspatial.github.io/terra/reference/resample.html);
+  default `"cubicspline"`. For a point (sf/SpatVector) `onto`, passed to
+  [`terra::extract()`](https://rspatial.github.io/terra/reference/extract.html),
+  which only supports `"simple"` and `"bilinear"`; default `"bilinear"`.
+  Default `NULL` uses the kind-appropriate default; an explicit value
+  that
+  [`terra::extract()`](https://rspatial.github.io/terra/reference/extract.html)
+  does not support is an error for a point target.
 
 - output:
 
@@ -96,18 +132,34 @@ topocast(
   targets) or `"terra"`, `"sf"`, `"spatvector"`, `"data.frame"` (point
   targets). Default `NULL` returns the result in the class of `onto`.
 
-- min_cells, min_variance:
+- clamp:
+
+  If `TRUE`, bound the downscaled field to the observed range of the
+  coarse response, a guard against the local linear fit extrapolating
+  without limit where a fine predictor lies outside the range it was fit
+  on. Default `FALSE`.
+
+- min_cells, min_variance, threads:
 
   Passed to
   [`window_regression()`](https://gillescolling.com/topocast/reference/window_regression.md).
+  Set `threads = 1` when calling from inside a worker that is itself
+  parallelized over targets, so the workers do not each spawn a full
+  thread team.
 
 ## Value
 
 The downscaled result on the geometry of `onto`, in the class of `onto`
 or the class named by `output`. For a grid target: a single layer named
-for the response; one layer per period when `anomaly` is supplied; or
-the fitted layer plus `(Intercept)` and slope grids when
-`coefficients = TRUE`. For a point target the same quantities are
+for the response; one layer per response with a
+[`cbind()`](https://rdrr.io/r/base/cbind.html) left-hand side; one layer
+per period when `anomaly` is supplied; the fitted layer plus
+`(Intercept)` and slope grids when `coefficients = TRUE`; and
+`r.squared` and `residual.sd` grids plus a shared `n.valid` grid when
+`diagnostics = TRUE`. With several responses the coefficient,
+`r.squared`, and `residual.sd` grids are prefixed by the response name;
+`n.valid` is not, since it is the same valid-cell mask for every
+response fit in the call. For a point target the same quantities are
 returned as prediction columns.
 
 ## Details
@@ -129,11 +181,27 @@ aggregating its `onto` layer to the response grid with `aggregate`, so
 `topocast(prec ~ elev, data = prec_coarse, onto = dem_fine, radius = 15)`
 works directly from a coarse climate layer and a fine DEM.
 
+Several responses that share the predictors are downscaled together by
+naming them as `cbind(prec, tmin) ~ elev`. The moving-window design
+depends only on the predictors, so it is fit once and solved against
+every response; the result has one layer (or column) per response. With
+`coefficients` or `diagnostics`, the extra grids are prefixed by the
+response name. The setup a call does around the fit is shared the same
+way: the coefficient grids reach `onto` in one resampling step and the
+`onto` predictors are read once for the call. Responses on one coarse
+grid sharing one `onto`, such as several climate scenarios downscaled
+onto the same range, therefore cost less named together in one call than
+split across several.
+
 For a time series, supply `anomaly`: a stack of coarse periods. The
 baseline relationship is fit once and each period's coarse anomaly,
 relative to `baseline`, is carried onto the fine baseline. Use
 `type = "ratio"` for non-negative variables such as precipitation and
-`type = "additive"` for variables such as temperature.
+`type = "additive"` for variables such as temperature. With
+`type = "ratio"`, a coarse cell where the baseline is zero and the
+period is a genuine `x / 0` (undefined) is `NA`; where both the baseline
+and the period are zero, the ratio is taken as `1` (no change) rather
+than `NA`.
 
 `data` and `onto` may be any of the common spatial classes. A gridded
 input is accepted as a `SpatRaster`, a `Raster*` object (raster), or a
@@ -172,6 +240,16 @@ fine2 <- topocast(prec ~ elev, data = data[["prec"]], onto = terrain, radius = 4
 # return the local coefficient grids
 coef_grids <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
                        coefficients = TRUE)
+
+# several responses sharing the predictor, downscaled in one call
+temperature <- 25 - 0.006 * elevation
+data2 <- c(precipitation, temperature, elevation)
+names(data2) <- c("prec", "temp", "elev")
+both <- topocast(cbind(prec, temp) ~ elev, data = data2, onto = terrain, radius = 4)
+
+# diagnostics: the local fit quality as an r.squared grid
+with_r2 <- topocast(prec ~ elev, data = data, onto = terrain, radius = 4,
+                    diagnostics = TRUE)
 
 # time series: supply the periods
 months <- precipitation * c(0.8, 1.2)

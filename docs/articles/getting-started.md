@@ -4,18 +4,27 @@ A coarse climate grid tells you the precipitation over a 600 m cell. A
 digital elevation model tells you the terrain at 100 m. `topocast` joins
 the two: it learns how the coarse variable tracks the terrain, locally,
 and rewrites the coarse grid at the resolution of the elevation model.
-The relationship is fit once per neighbourhood with a moving-window
+The relationship is fit once per neighborhood with a moving-window
 regression, and the cost does not grow with the window size.
 
 This vignette downscales a synthetic precipitation field, adds a second
 terrain predictor, carries a short time series, and drops down to the
 matrix engine that does the work.
 
+## Installation
+
+``` r
+
+# install.packages("pak")
+pak::pak("gcol33/topocast")
+```
+
 ``` r
 
 library(topocast)
 library(terra)
-#> terra 1.9.27
+#> Warning: package 'terra' was built under R version 4.6.1
+#> terra 1.9.50
 ```
 
 ## A landscape to downscale
@@ -107,16 +116,21 @@ coarse field sets the broad level, the elevation carries the texture.
 
 ``` r
 
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(prec_coarse, main = "coarse precipitation (600 m)")
 plot(fine_prec,   main = "downscaled (100 m)")
 ```
 
 ![](getting-started_files/figure-html/plot-single-1.svg)
 
+``` r
+
+par(op)
+```
+
 The `radius` is measured in coarse cells. A radius of 4 means each
 regression sees a 9 by 9 window of coarse cells, here a 5.4 km
-neighbourhood. Inside that window `topocast` fits one intercept and one
+neighborhood. Inside that window `topocast` fits one intercept and one
 slope, then resamples those coefficients to the fine grid and evaluates
 `intercept + slope * elev` at every fine cell.
 
@@ -143,6 +157,43 @@ topocast(prec ~ elev + aspect, data = coarse, onto = terrain, radius = 4)
 #>   data layers: prec, elev, slope
 #>   onto layers: elev, slope
 ```
+
+## Several responses at once
+
+Climate work rarely stops at one variable. Precipitation and temperature
+share the same terrain, so they share the moving-window design. Naming
+them together on the left-hand side with
+[`cbind()`](https://rdrr.io/r/base/cbind.html) fits all of them in one
+pass: the window cross-products that make up the design are built and
+factored once, then solved against each response, so a second response
+costs little more than the first.
+
+``` r
+
+tmin_coarse <- 8 - 0.006 * elev_coarse +
+  setValues(elev_coarse, rnorm(ncell(elev_coarse), 0, 0.5))
+names(tmin_coarse) <- "tmin"
+climate <- c(prec_coarse, tmin_coarse, elev_coarse, slope_coarse)
+
+both <- topocast(cbind(prec, tmin) ~ elev + slope, data = climate, onto = terrain,
+                 radius = 4)
+both
+#> class       : SpatRaster
+#> size        : 120, 120, 2  (nrow, ncol, nlyr)
+#> resolution  : 100, 100  (x, y)
+#> extent      : 0, 12000, 0, 12000  (xmin, xmax, ymin, ymax)
+#> coord. ref. : WGS 84 / UTM zone 32N (EPSG:32632)
+#> source(s)   : memory
+#> names       :      prec,      tmin
+#> min values  : 508.60264, -5.410624
+#> max values  : 892.19583,  6.666107
+```
+
+The result carries one layer per response, named for it, and each layer
+matches the single-response call. The shared design saves the repeated
+fitting, not the numbers. The valid-cell mask is complete-case across
+the responses: a coarse cell enters a window only where every response
+and predictor is finite.
 
 ## The one-DEM shortcut
 
@@ -183,17 +234,48 @@ grids <- topocast(prec ~ elev, data = coarse, onto = terrain, radius = 4,
 names(grids)
 #> [1] "prec"        "(Intercept)" "elev"
 
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(grids[["prec"]], main = "downscaled precipitation")
 plot(grids[["elev"]], main = "local slope (mm per m)")
 ```
 
 ![](getting-started_files/figure-html/coefficients-1.svg)
 
+``` r
+
+par(op)
+```
+
 The slope layer is the local precipitation lapse rate. Where it is
 steep, elevation explains most of the variation in precipitation; where
 it is near zero, the terrain carries little signal and the downscaled
 field stays close to the coarse input.
+
+## Where the fit is strong
+
+How much of the response the terrain actually explains varies across the
+map. `diagnostics = TRUE` returns three grids, carried onto the fine
+grid: `r.squared`, the coefficient of determination of each window fit;
+`residual.sd`, the residual standard deviation of the fit in the
+response’s own units; and `n.valid`, the count of valid coarse cells the
+window held. High `r.squared` marks where the terrain relationship is
+tight and the downscaling adds real detail; low values mark where the
+fitted field rests mostly on the coarse level. `n.valid` tells apart a
+low `r.squared` because the window barely had enough cells to fit from
+one because the relationship is genuinely noisy there; with several
+responses it is one shared grid, not one per response, since the
+valid-cell mask is complete-case across them.
+
+``` r
+
+fit_quality <- topocast(prec ~ elev + slope, data = coarse, onto = terrain,
+                        radius = 4, diagnostics = TRUE)
+names(fit_quality)
+#> [1] "prec"        "r.squared"   "residual.sd" "n.valid"
+plot(fit_quality[["r.squared"]], main = "local R-squared", range = c(0, 1))
+```
+
+![](getting-started_files/figure-html/diagnostics-1.svg)
 
 ## A time series
 
@@ -223,12 +305,17 @@ by zero.
 
 ``` r
 
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
+op <- par(mfrow = c(1, 2), mar = c(2, 2, 2, 4))
 plot(series[["jan"]], main = "January (100 m)")
 plot(series[["jul"]], main = "July (100 m)")
 ```
 
 ![](getting-started_files/figure-html/plot-series-1.svg)
+
+``` r
+
+par(op)
+```
 
 ## Points and other spatial classes
 
@@ -241,7 +328,8 @@ attributes; here they are read from the elevation model.
 ``` r
 
 library(sf)
-#> Linking to GEOS 3.14.1, GDAL 3.12.1, PROJ 9.7.1; sf_use_s2() is TRUE
+#> Warning: package 'sf' was built under R version 4.6.1
+#> Linking to GEOS 3.13.1, GDAL 3.11.4, PROJ 9.7.0; sf_use_s2() is TRUE
 
 plots <- st_as_sf(
   data.frame(x = c(2000, 4000, 6000, 8000, 10000, 5000),
@@ -321,11 +409,14 @@ x <- list(as.matrix(elev_coarse, wide = TRUE),
           as.matrix(slope_coarse, wide = TRUE))
 fit <- window_regression(y, x, radius = 4)
 str(fit, max.level = 2)
-#> List of 2
-#>  $ intercept: num [1:20, 1:20] 823 794 881 854 889 ...
-#>  $ slope    :List of 2
+#> List of 5
+#>  $ intercept  : num [1:20, 1:20] 823 794 881 854 889 ...
+#>  $ slope      :List of 2
 #>   ..$ : num [1:20, 1:20] -0.164 -0.154 -0.184 -0.179 -0.188 ...
 #>   ..$ : num [1:20, 1:20] 7.57 8.33 5.85 7.11 5.71 ...
+#>  $ r_squared  : num [1:20, 1:20] 0.863 0.89 0.91 0.908 0.911 ...
+#>  $ residual_sd: num [1:20, 1:20] 18.2 16.5 16.1 16.7 17 ...
+#>  $ n_valid    : num [1:20, 1:20] 16 20 24 28 32 36 36 36 36 36 ...
 ```
 
 The elevation slope recovers the coefficient we simulated. Over a window
@@ -371,6 +462,13 @@ formula but is not a layer of `data`, it is aggregated from `onto` to
 the response grid with `aggregate`, a cell average by default. Set it to
 another \[terra::resample()\] method if a different aggregation suits
 the predictor.
+
+**Clamping extreme terrain.** The downscaled field is a regression
+surface, so where the fine predictor reaches values the coarse window
+never saw, the local slope keeps extrapolating linearly. `clamp = TRUE`
+bounds the result to the observed range of the coarse response, a guard
+against runaway values at extreme elevation. The `r.squared` grid from
+`diagnostics = TRUE` shows where such a fit is weak in the first place.
 
 **What the output conserves.** The downscaled field is a regression
 surface evaluated on the fine predictors. Averaging it back to the
