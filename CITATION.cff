@@ -16,6 +16,8 @@ preferred-citation:
   authors:
   - family-names: Colling
     given-names: Gilles
+    orcid: https://orcid.org/0000-0003-3070-6066
   year: 2026
-  url: https://github.com/gcol33/topocast
+  doi: 10.32614/CRAN.package.topocast
+  url: https://gillescolling.com/topocast/
   notes: R package version 0.0.5

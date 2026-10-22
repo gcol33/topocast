@@ -2,7 +2,9 @@ TY  - COMP
 AU  - Colling, Gilles
 TI  - topocast: Moving-Window Regression Downscaling of Raster Data
 PY  - 2026
-UR  - https://github.com/gcol33/topocast
+DO  - 10.32614/CRAN.package.topocast
+UR  - https://gillescolling.com/topocast/
 N1  - R package version 0.0.5
+ID  - colling2026topocast
 ER  - 
 

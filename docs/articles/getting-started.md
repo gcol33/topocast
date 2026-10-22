@@ -23,7 +23,6 @@ pak::pak("gcol33/topocast")
 
 library(topocast)
 library(terra)
-#> Warning: package 'terra' was built under R version 4.6.1
 #> terra 1.9.50
 ```
 
@@ -328,7 +327,6 @@ attributes; here they are read from the elevation model.
 ``` r
 
 library(sf)
-#> Warning: package 'sf' was built under R version 4.6.1
 #> Linking to GEOS 3.13.1, GDAL 3.11.4, PROJ 9.7.0; sf_use_s2() is TRUE
 
 plots <- st_as_sf(

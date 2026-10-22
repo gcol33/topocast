@@ -11,13 +11,15 @@ Source:
 [`inst/CITATION`](https://github.com/gcol33/topocast/blob/HEAD/inst/CITATION)
 
 Colling G (2026). *topocast: Moving-Window Regression Downscaling of
-Raster Data*. R package version 0.0.5,
-<https://github.com/gcol33/topocast>.
+Raster Data*.
+[doi:10.32614/CRAN.package.topocast](https://doi.org/10.32614/CRAN.package.topocast).
+R package version 0.0.5, <https://gillescolling.com/topocast/>.
 
-    @Manual{,
+    @Manual{colling2026topocast,
       title = {topocast: Moving-Window Regression Downscaling of Raster Data},
       author = {Gilles Colling},
       year = {2026},
       note = {R package version 0.0.5},
-      url = {https://github.com/gcol33/topocast},
+      doi = {10.32614/CRAN.package.topocast},
+      url = {https://gillescolling.com/topocast/},
     }

@@ -1,8 +1,12 @@
+citHeader("To cite topocast in publications use:")
+
 bibentry(
   bibtype  = "Manual",
-  title    = "topocast: Moving-Window Regression Downscaling of Raster Data",
-  author   = person("Gilles", "Colling"),
+  key      = "colling2026topocast",
+  title    = paste0("topocast: ", meta$Title),
+  author   = person("Gilles", "Colling", comment = c(ORCID = "0000-0003-3070-6066")),
   year     = "2026",
-  note     = sprintf("R package version %s", meta$Version),
-  url      = "https://github.com/gcol33/topocast"
+  note     = paste("R package version", meta$Version),
+  doi      = "10.32614/CRAN.package.topocast",
+  url      = "https://gillescolling.com/topocast/"
 )

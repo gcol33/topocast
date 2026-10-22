@@ -11,3 +11,5 @@ dev_knit.R
 dev_check.R
 dev_pkgdown.R
 figure/
+
+.run*

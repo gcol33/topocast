@@ -79,114 +79,163 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="topocast">topocast<a class="anchor" aria-label="anchor" href="#topocast"></a>
 </h1></div>
+<p><em>coarse climate grids at the resolution of the terrain</em></p>
 <!-- badges: start -->
 
-<p><em>coarse climate grids at the resolution of your terrain</em></p>
-<p><strong>Downscale a coarse raster onto fine terrain by moving-window regression.</strong></p>
-<div class="figure">
-<img src="reference/figures/README-downscale-1.png" alt="A coarse blocky precipitation grid beside the same field downscaled onto fine terrain, sharing one color scale." width="100%"><p class="caption">
-plot of chunk downscale
-</p>
-</div>
-<p>Give <code>topocast</code> a coarse variable and a fine predictor it tracks. In a window around every cell it learns how the variable depends on the predictor, then evaluates that local relationship on the fine predictor. A 1 km precipitation grid and a 100 m elevation model become a 100 m precipitation grid.</p>
+<p><img src="reference/figures/README-downscale-1.png" alt="A simulated precipitation field on a 1.2 km grid drawn as coarse blocks, beside the same field downscaled onto a 100 m elevation model, where the terrain texture shows through; both panels share one colour scale" width="100%"></p>
+<p>topocast downscales a coarse raster, such as a 1 km precipitation grid, to the resolution of a fine predictor, such as a 100 m elevation model.</p>
+<p>In a square window around every coarse cell, topocast fits a linear regression of the coarse variable on the coarse predictors. The fitted intercept and slopes are resampled to the fine grid and applied to the fine predictors, so the output carries the structure of the terrain with coefficients that vary across the map. This is the regression step behind high-resolution climate surfaces such as CHELSA (Karger et al. 2017), fitted locally and with any number of named predictors. The window fits use summed-area tables in C++, so a radius of 30 coarse cells costs the same per cell as a radius of 3. You can map the local coefficients and the fit quality, and decide where the downscaled detail is supported by the terrain.</p>
+<p>topocast supports:</p>
+<ul>
+<li>
+<strong>Several predictors.</strong> <code>prec ~ elev + slope + twi</code> fits elevation, slope, topographic wetness or any aligned covariate jointly. Layers are matched by name between the coarse and the fine data, so a missing layer is reported by name.</li>
+<li>
+<strong>Several responses in one call.</strong> <code>cbind(prec, tmin) ~ elev</code> downscales variables that share the terrain. The window design is built and factored once and solved against each response.</li>
+<li>
+<strong>Time series.</strong> A stack of coarse periods passed as <code>anomaly</code> is carried onto the downscaled baseline, as a ratio for precipitation or as a difference for temperature.</li>
+<li>
+<strong>Prediction at points.</strong> Station or plot locations as an <code>sf</code> or <code>SpatVector</code> object receive a prediction column instead of a grid.</li>
+<li>
+<strong>Fit quality on the map.</strong> <code>diagnostics = TRUE</code> returns grids of the local R², the residual standard deviation and the number of valid cells in each window.</li>
+<li>
+<strong>Common spatial classes.</strong> terra <code>SpatRaster</code>, raster <code>Raster*</code> and <code>stars</code> grids are accepted, and the result comes back in the class of the fine data.</li>
+</ul>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
+<p>Install the released version from CRAN. Windows and macOS get a binary and need no build tools:</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"topocast"</span><span class="op">)</span></span></code></pre></div>
+<p>The development version compiles C++ code. Install the build tools for your operating system first:</p>
+<table class="table">
+<colgroup>
+<col width="50%">
+<col width="50%">
+</colgroup>
+<thead><tr>
+<th>Operating system</th>
+<th>Build tools</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Windows</td>
+<td>
+<a href="https://cran.r-project.org/bin/windows/Rtools/" class="external-link">Rtools</a> matching your R version</td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>Run <code>xcode-select --install</code> in Terminal</td>
+</tr>
+<tr>
+<td>Debian / Ubuntu</td>
+<td>Install <code>r-base-dev</code>
+</td>
+</tr>
+</tbody>
+</table>
+<p>Check that R can find the compiler:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">pkgbuild</span><span class="fu">::</span><span class="fu"><a href="https://pkgbuild.r-lib.org/reference/has_build_tools.html" class="external-link">has_build_tools</a></span><span class="op">(</span>debug <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<p>Then install topocast from GitHub:</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># install.packages("pak")</span></span>
 <span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/topocast"</span><span class="op">)</span></span></code></pre></div>
+<p>The compiler has to support C++17. The C++ code links R’s own LAPACK and BLAS through RcppArmadillo and needs no further system library. On Linux, <a href="https://rspatial.github.io/terra/" class="external-link">terra</a>, which topocast uses for rasters, builds against GDAL, GEOS and PROJ.</p>
+<div class="section level3">
+<h3 id="optional-multithreading">Optional: multithreading<a class="anchor" aria-label="anchor" href="#optional-multithreading"></a>
+</h3>
+<p>OpenMP lets the window fits use several CPU threads, set by the <code>threads</code> argument of <a href="https://gillescolling.com/topocast/reference/topocast.html"><code>topocast()</code></a> and <a href="https://gillescolling.com/topocast/reference/window_regression.html"><code>window_regression()</code></a>. By default every available core is used.</p>
+<p>Rtools on Windows and the default compiler on Linux include OpenMP. Without it, the package installs and fits on one thread with the same results.</p>
+<div class="section level4">
+<h4 id="macos-setup">macOS setup<a class="anchor" aria-label="anchor" href="#macos-setup"></a>
+</h4>
+<p>Apple’s compiler needs an additional OpenMP runtime. Install it in Terminal:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="ex">brew</span> install libomp</span></code></pre></div>
+<p>Before installing topocast from source, add the settings for your Mac to <code>~/.R/Makevars</code>, R’s personal compiler-settings file. Create the directory and file if needed.</p>
+<p><strong>Apple Silicon:</strong></p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode makefile"><code class="sourceCode makefile"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="dt">CPPFLAGS</span> <span class="ch">+=</span><span class="st"> -I/opt/homebrew/opt/libomp/include -Xclang -fopenmp</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="dt">LDFLAGS</span> <span class="ch">+=</span><span class="st"> -L/opt/homebrew/opt/libomp/lib -lomp</span></span></code></pre></div>
+<p><strong>Intel:</strong></p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode makefile"><code class="sourceCode makefile"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="dt">CPPFLAGS</span> <span class="ch">+=</span><span class="st"> -I/usr/local/opt/libomp/include -Xclang -fopenmp</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="dt">LDFLAGS</span> <span class="ch">+=</span><span class="st"> -L/usr/local/opt/libomp/lib -lomp</span></span></code></pre></div>
 </div>
-<div class="section level2">
-<h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
-</h2>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://gillescolling.com/topocast/">topocast</a></span><span class="op">)</span></span>
-<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://rspatial.org/" class="external-link">terra</a></span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">prec_1km</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="st">"prec"</span>      <span class="co"># coarse variable, what you want at high resolution</span></span>
-<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">dem_100m</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="st">"elev"</span>      <span class="co"># fine predictor it tracks</span></span>
-<span></span>
-<span><span class="va">prec_100m</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">prec_1km</span>, onto <span class="op">=</span> <span class="va">dem_100m</span>, radius <span class="op">=</span> <span class="fl">15</span><span class="op">)</span></span></code></pre></div>
-<p><code>prec_100m</code> is precipitation on the elevation model’s grid. Coarse to fine is one call: name the response and the predictor in a formula, pass the coarse grid as <code>data</code> and the fine grid as <code>onto</code>.</p>
 </div>
-<div class="section level2">
-<h2 id="what-goes-in-what-comes-out">What goes in, what comes out<a class="anchor" aria-label="anchor" href="#what-goes-in-what-comes-out"></a>
-</h2>
-<ul>
-<li>
-<strong><code>data</code></strong> is the coarse variable you want at higher resolution, as a <code>SpatRaster</code>, <code>Raster*</code>, or <code>stars</code> grid. The layer on the left of the formula is the response.</li>
-<li>
-<strong><code>onto</code></strong> is the target: a fine grid holding the predictor(s) the variable tracks, often a digital elevation model. It can also be a set of station or plot points carrying those predictors as attributes.</li>
-<li>
-<strong>the result</strong> is the response on the geometry of <code>onto</code>, in the class of <code>onto</code>: a raster at the fine resolution for a grid target, a prediction column for a point target.</li>
-</ul>
-<p>When the only fine layer you have is the predictor itself, as in the example above, <code>topocast</code> derives the coarse predictor from <code>onto</code> for you, so a single coarse climate layer and a DEM are enough to start.</p>
-</div>
-<div class="section level2">
-<h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
-</h2>
-<p>The relationship is fit locally, in a square window around every coarse cell, with summed-area tables: each window fit reduces to four lookups per sufficient statistic, so a radius of 30 costs the same as a radius of 3. The fitted intercept and slope grids are resampled to the fine grid and combined with the fine predictors as <code>fitted = intercept + sum(slope * predictor)</code>, so the output carries the fine-scale structure of the terrain with locally varying coefficients. This is the regression step behind high-resolution climate surfaces such as CHELSA (Karger et al. 2017); <code>topocast</code> runs it locally and takes any number of named predictors.</p>
-</div>
-<div class="section level2">
-<h2 id="whats-in-the-box">What’s in the box<a class="anchor" aria-label="anchor" href="#whats-in-the-box"></a>
-</h2>
-<ul>
-<li>
-<strong>One front door.</strong> <code><a href="reference/topocast.html">topocast()</a></code> takes a formula, the coarse <code>data</code>, and the fine <code>onto</code>, and returns the downscaled response.</li>
-<li>
-<strong>Any number of predictors.</strong> <code>prec ~ elev + slope + twi</code> fits elevation, slope, topographic wetness, or any aligned covariate jointly. The formula names match layers between <code>data</code> and <code>onto</code>, so a missing layer is reported by name.</li>
-<li>
-<strong>Several responses in one call.</strong> <code>cbind(prec, tmin) ~ elev</code> downscales variables that share the terrain together. The window design is built once and solved against each response, so a second response costs little more than the first.</li>
-<li>
-<strong>Constant cost per window.</strong> Summed-area tables keep each per-cell fit at four lookups for any radius.</li>
-<li>
-<strong>Common spatial classes.</strong> <code>SpatRaster</code>, <code>Raster*</code> (raster), and <code>stars</code> grids are all accepted; the result comes back in the class of <code>onto</code>, or the class named by <code>output</code>.</li>
-<li>
-<strong>Prediction at points.</strong> Pass an <code>sf</code> or <code>SpatVector</code> of stations or plots as <code>onto</code> and receive a prediction column, with the points carrying the fine predictor values.</li>
-<li>
-<strong>Time series in one call.</strong> Pass a stack of periods as <code>anomaly</code> to fit the baseline once and carry each period onto it, <code>"ratio"</code> for precipitation or <code>"additive"</code> for temperature.</li>
-<li>
-<strong>Fit quality on the map.</strong> <code>diagnostics = TRUE</code> returns an <code>r.squared</code> grid showing where the terrain relationship is strong, and <code>clamp = TRUE</code> bounds the output to the observed range of the coarse response.</li>
-<li>
-<strong>A matrix engine.</strong> <code><a href="reference/window_regression.html">window_regression()</a></code> exposes the kernel for callers who hold their data as matrices.</li>
-</ul>
 </div>
 <div class="section level2">
 <h2 id="usage">Usage<a class="anchor" aria-label="anchor" href="#usage"></a>
 </h2>
-<p>Several predictors, matched by name between the two grids:</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">coarse</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">prec_1km</span>, <span class="va">elev_1km</span>, <span class="va">twi_1km</span>, <span class="va">slope_1km</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">coarse</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"prec"</span>, <span class="st">"elev"</span>, <span class="st">"twi"</span>, <span class="st">"slope"</span><span class="op">)</span></span>
-<span><span class="va">terrain</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">elev_100m</span>, <span class="va">twi_100m</span>, <span class="va">slope_100m</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">terrain</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"elev"</span>, <span class="st">"twi"</span>, <span class="st">"slope"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">prec_100m</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span> <span class="op">+</span> <span class="va">twi</span> <span class="op">+</span> <span class="va">slope</span>, data <span class="op">=</span> <span class="va">coarse</span>, onto <span class="op">=</span> <span class="va">terrain</span>,</span>
-<span>                      radius <span class="op">=</span> <span class="fl">15</span><span class="op">)</span></span></code></pre></div>
-<p>Several responses that share the terrain, downscaled in one pass and returned as one layer each:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">climate_100m</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="va">prec</span>, <span class="va">tmin</span>, <span class="va">tmax</span><span class="op">)</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">coarse</span>,</span>
-<span>                         onto <span class="op">=</span> <span class="va">terrain</span>, radius <span class="op">=</span> <span class="fl">15</span><span class="op">)</span></span></code></pre></div>
-<p>A monthly series sharing one terrain relationship across periods:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">series</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">coarse</span>, onto <span class="op">=</span> <span class="va">terrain</span>, radius <span class="op">=</span> <span class="fl">15</span>,</span>
-<span>                   anomaly <span class="op">=</span> <span class="va">prec_monthly_1km</span>, type <span class="op">=</span> <span class="st">"ratio"</span><span class="op">)</span></span></code></pre></div>
-<p>Downscaling straight to plot locations, returned as a column on the points:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">at_plots</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">coarse</span>, onto <span class="op">=</span> <span class="va">plots_sf</span>, radius <span class="op">=</span> <span class="fl">15</span><span class="op">)</span></span></code></pre></div>
-<p>The local coefficient grids, to read the fitted lapse rate:</p>
+<ol style="list-style-type: decimal">
+<li>Give the coarse variable and the fine predictor layer names that the formula uses.</li>
+<li>Call <code><a href="reference/topocast.html">topocast()</a></code> with the formula, the coarse grid as <code>data</code>, the fine grid as <code>onto</code> and the window <code>radius</code> in coarse cells.</li>
+<li>Use the result, which lies on the grid of <code>onto</code>, or map the local fit with <code>coefficients = TRUE</code> or <code>diagnostics = TRUE</code>.</li>
+</ol>
+<p>The example builds a 100 m elevation model and a 600 m precipitation grid that falls with elevation:</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">coefs</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">coarse</span>, onto <span class="op">=</span> <span class="va">terrain</span>, radius <span class="op">=</span> <span class="fl">15</span>,</span>
-<span>                  coefficients <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://gillescolling.com/topocast/">topocast</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://rspatial.org/" class="external-link">terra</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">elev</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/rast.html" class="external-link">rast</a></span><span class="op">(</span>nrows <span class="op">=</span> <span class="fl">120</span>, ncols <span class="op">=</span> <span class="fl">120</span>, xmin <span class="op">=</span> <span class="fl">0</span>, xmax <span class="op">=</span> <span class="fl">12000</span>,</span>
+<span>             ymin <span class="op">=</span> <span class="fl">0</span>, ymax <span class="op">=</span> <span class="fl">12000</span>, crs <span class="op">=</span> <span class="st">"EPSG:32632"</span><span class="op">)</span></span>
+<span><span class="va">xy</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/crds.html" class="external-link">crds</a></span><span class="op">(</span><span class="va">elev</span><span class="op">)</span></span>
+<span><span class="va">elev</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/setValues.html" class="external-link">setValues</a></span><span class="op">(</span><span class="va">elev</span>, <span class="fl">1200</span> <span class="op">+</span> <span class="fl">600</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="va">xy</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">/</span> <span class="fl">2500</span><span class="op">)</span> <span class="op">+</span></span>
+<span>                          <span class="fl">400</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">cos</a></span><span class="op">(</span><span class="va">xy</span><span class="op">[</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">/</span> <span class="fl">2000</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">elev</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="st">"elev"</span></span>
+<span></span>
+<span><span class="va">prec</span> <span class="op">&lt;-</span> <span class="fl">900</span> <span class="op">-</span> <span class="fl">0.18</span> <span class="op">*</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/aggregate.html" class="external-link">aggregate</a></span><span class="op">(</span><span class="va">elev</span>, fact <span class="op">=</span> <span class="fl">6</span><span class="op">)</span></span>
+<span><span class="va">prec</span> <span class="op">&lt;-</span> <span class="va">prec</span> <span class="op">+</span> <span class="fu"><a href="https://rspatial.github.io/terra/reference/setValues.html" class="external-link">setValues</a></span><span class="op">(</span><span class="va">prec</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rspatial.github.io/terra/reference/dimensions.html" class="external-link">ncell</a></span><span class="op">(</span><span class="va">prec</span><span class="op">)</span>, <span class="fl">0</span>, <span class="fl">20</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">prec</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="st">"prec"</span></span>
+<span></span>
+<span><span class="va">fine_prec</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">prec</span>, onto <span class="op">=</span> <span class="va">elev</span>, radius <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="va">fine_prec</span></span>
+<span><span class="co">#&gt; class       : SpatRaster</span></span>
+<span><span class="co">#&gt; size        : 120, 120, 1  (nrow, ncol, nlyr)</span></span>
+<span><span class="co">#&gt; resolution  : 100, 100  (x, y)</span></span>
+<span><span class="co">#&gt; extent      : 0, 12000, 0, 12000  (xmin, xmax, ymin, ymax)</span></span>
+<span><span class="co">#&gt; coord. ref. : WGS 84 / UTM zone 32N (EPSG:32632)</span></span>
+<span><span class="co">#&gt; source(s)   : memory</span></span>
+<span><span class="co">#&gt; name        :       prec</span></span>
+<span><span class="co">#&gt; min value   : 495.784953</span></span>
+<span><span class="co">#&gt; max value   : 870.116936</span></span></code></pre></div>
+<p>The coarse grid has 20 by 20 cells and the result has the 120 by 120 cells of the elevation model. A radius of 4 gives each regression a window of 9 by 9 coarse cells. Here <code>data</code> contains only the precipitation, so the coarse elevation is aggregated from <code>onto</code> before the fit.</p>
+<p>The coarse <code>data</code> is a <code>SpatRaster</code>, <code>Raster*</code> or <code>stars</code> grid, and the layer named on the left of the formula is the response. The fine <code>onto</code> is a grid, or a set of points, that carries the predictors named on the right. Both share a coordinate reference system; a mismatch stops the call and names both systems.</p>
+</div>
+<div class="section level2">
+<h2 id="several-predictors-responses-and-periods">Several predictors, responses and periods<a class="anchor" aria-label="anchor" href="#several-predictors-responses-and-periods"></a>
+</h2>
+<p>Each predictor named in the formula is fitted jointly, and <code><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind()</a></code> on the left downscales several responses with one shared design. A stack of coarse periods passed as <code>anomaly</code> fits the baseline once and carries each period onto it, with <code>type = "ratio"</code> for non-negative variables such as precipitation and <code>type = "additive"</code> for temperature. <a href="https://gillescolling.com/topocast/articles/getting-started.html">Getting started with topocast</a> runs each of these on one landscape, along with points and the other spatial classes.</p>
+</div>
+<div class="section level2">
+<h2 id="mapping-the-local-fit">Mapping the local fit<a class="anchor" aria-label="anchor" href="#mapping-the-local-fit"></a>
+</h2>
+<p><code>coefficients = TRUE</code> returns the fitted layer with the intercept and one slope per predictor on the fine grid. The slope of elevation is the local lapse rate:</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">grids</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/topocast.html">topocast</a></span><span class="op">(</span><span class="va">prec</span> <span class="op">~</span> <span class="va">elev</span>, data <span class="op">=</span> <span class="va">prec</span>, onto <span class="op">=</span> <span class="va">elev</span>, radius <span class="op">=</span> <span class="fl">4</span>,</span>
+<span>                  coefficients <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rspatial.github.io/terra/reference/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">grids</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "prec"        "(Intercept)" "elev"</span></span></code></pre></div>
+<p><code>diagnostics = TRUE</code> adds the local R² (<code>r.squared</code>), the residual standard deviation and the count of valid cells in each window. <code>clamp = TRUE</code> bounds the output to the observed range of the coarse response where the fine terrain reaches values the window never saw. Averaging the result back to the coarse grid does not reproduce the coarse input exactly, because the coarse residual is not carried.</p>
+</div>
+<div class="section level2">
+<h2 id="how-the-window-regression-works">How the window regression works<a class="anchor" aria-label="anchor" href="#how-the-window-regression-works"></a>
+</h2>
+<p>Each window fit needs only sums of the response, the predictors and their products over the window. Summed-area tables give each sum in four lookups, so the cost per cell does not depend on the radius. <a href="https://gillescolling.com/topocast/articles/how-it-works.html">How moving-window downscaling works</a> derives the method and the masking rules. <code><a href="reference/window_regression.html">window_regression()</a></code> runs the same fit on plain numeric matrices, without terra.</p>
 </div>
 <div class="section level2">
 <h2 id="documentation">Documentation<a class="anchor" aria-label="anchor" href="#documentation"></a>
 </h2>
+<p>Start with <a href="https://gillescolling.com/topocast/articles/getting-started.html">Getting started with topocast</a>: one landscape downscaled with one and several predictors, several responses, a time series and points.</p>
 <ul>
-<li><a href="https://gillescolling.com/topocast/articles/getting-started.html">Getting started</a></li>
-<li><a href="https://gillescolling.com/topocast/articles/how-it-works.html">How moving-window downscaling works</a></li>
-<li><a href="https://gillescolling.com/topocast/reference/">Full reference</a></li>
+<li>
+<a href="https://gillescolling.com/topocast/articles/how-it-works.html">How moving-window downscaling works</a>: the local regression, summed-area tables, masking and fit quality.</li>
+<li>
+<a href="https://gillescolling.com/topocast/reference/">Full reference</a>: every function.</li>
 </ul>
+</div>
+<div class="section level2">
+<h2 id="getting-help">Getting help<a class="anchor" aria-label="anchor" href="#getting-help"></a>
+</h2>
+<p>Questions and bug reports go to the <a href="https://github.com/gcol33/topocast/issues" class="external-link">GitHub issues</a>. A bug report is easiest to act on with a small reproducible example, for instance made with <a href="https://reprex.tidyverse.org/" class="external-link">reprex</a>.</p>
 </div>
 <div class="section level2">
 <h2 id="support">Support<a class="anchor" aria-label="anchor" href="#support"></a>
@@ -199,15 +248,28 @@ plot of chunk downscale
 <p><a href="https://buymeacoffee.com/gcol33" class="external-link"><img src="https://img.shields.io/badge/-Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&amp;logoColor=black" alt="Buy Me A Coffee"></a></p>
 </div>
 <div class="section level2">
-<h2 id="license-and-citation">License and citation<a class="anchor" aria-label="anchor" href="#license-and-citation"></a>
+<h2 id="license">License<a class="anchor" aria-label="anchor" href="#license"></a>
 </h2>
-<p>MIT. If you use <code>topocast</code> in published work, please cite it:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode bibtex"><code class="sourceCode bibtex"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="co">@software{topocast,</span></span>
-<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="co">  author = {Colling, Gilles},</span></span>
-<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co">  title  = {topocast: Moving-Window Regression Downscaling of Raster Data},</span></span>
-<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">  year   = {2026},</span></span>
-<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">  url    = {https://github.com/gcol33/topocast}</span></span>
-<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">}</span></span></code></pre></div>
+<p>topocast is licensed under MIT.</p>
+</div>
+<div class="section level2">
+<h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
+</h2>
+<p>To cite topocast in publications use:</p>
+<pre class="text"><code>Colling G (2026). _topocast: Moving-Window Regression Downscaling of
+Raster Data_. doi:10.32614/CRAN.package.topocast
+&lt;https://doi.org/10.32614/CRAN.package.topocast&gt;. R package version
+0.0.5, &lt;https://gillescolling.com/topocast/&gt;.</code></pre>
+<p>BibTeX:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bibtex"><code class="sourceCode bibtex"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="va">@Manual</span>{<span class="ot">colling2026topocast</span>,</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="dt">title</span> = {topocast: Moving-Window Regression Downscaling of Raster Data},</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="dt">author</span> = {Gilles Colling},</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="dt">year</span> = {2026},</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="dt">note</span> = {R package version 0.0.5},</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="dt">doi</span> = {10.32614/CRAN.package.topocast},</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>  <span class="dt">url</span> = {https://gillescolling.com/topocast/},</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>}</span></code></pre></div>
+<p>Download the citation as <a href="https://gillescolling.com/topocast/topocast.bib">BibTeX</a> or <a href="https://gillescolling.com/topocast/topocast.ris">RIS</a>.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
@@ -245,10 +307,10 @@ plot of chunk downscale
 <div class="dev-status">
 <h2 data-toc-skip>Dev status</h2>
 <ul class="list-unstyled">
-<li><a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></li>
-<li><a href="https://opensource.org/license/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></li>
+<li><a href="https://CRAN.R-project.org/package=topocast" class="external-link"><img src="https://www.r-pkg.org/badges/version/topocast" alt="CRAN status"></a></li>
 <li><a href="https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></li>
 <li><a href="https://app.codecov.io/gh/gcol33/topocast" class="external-link"><img src="https://codecov.io/gh/gcol33/topocast/graph/badge.svg" alt="Codecov test coverage"></a></li>
+<li><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></li>
 </ul>
 </div>
 
