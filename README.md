@@ -7,6 +7,10 @@
 
 [![CRAN
 status](https://www.r-pkg.org/badges/version/topocast)](https://CRAN.R-project.org/package=topocast)
+[![CRAN
+downloads](https://cranlogs.r-pkg.org/badges/grand-total/topocast)](https://cran.r-project.org/package=topocast)
+[![Monthly
+downloads](https://cranlogs.r-pkg.org/badges/topocast)](https://cran.r-project.org/package=topocast)
 [![R-CMD-check](https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/gcol33/topocast/actions/workflows/R-CMD-check.yaml)
 [![Codecov test
 coverage](https://codecov.io/gh/gcol33/topocast/graph/badge.svg)](https://app.codecov.io/gh/gcol33/topocast)
